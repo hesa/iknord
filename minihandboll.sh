@@ -217,10 +217,9 @@ finddat()
 
 } 
 
-### KEEP
-#cleanup
-#getdocs
-#finddocs ${FIL_ARKIV_TXT}
+cleanup
+getdocs
+finddocs ${FIL_ARKIV_TXT}
 
 gentxt 
 #gentxt flickor
