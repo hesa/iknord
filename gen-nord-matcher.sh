@@ -1,18 +1,15 @@
 #!/bin/bash
 
-P01="http://www3.proteamonline.se/internet/p_13.htm#P01%20S"
-P02="http://www3.proteamonline.se/internet/p_15.htm#P02%20%C3%96"
-F01="http://www3.proteamonline.se/internet/f_18.htm#F01%20S"
-   #"http://www3.proteamonline.se/internet/f_16.htm#F01%20S"
-F03="http://www3.proteamonline.se/internet/f_25.htm#F03%20S"
-#http://www3.proteamonline.se/internet/f_23.htm#F03%20S"
-P03="http://www3.proteamonline.se/internet/p_18.htm#P03%20%C3%96"
-F04="file://$(pwd)/F04.txt"
-P04="file://$(pwd)/P04.txt"
-AH="http://www3.proteamonline.se/internet/h_4.htm"
-JH="http://www3.proteamonline.se/internet/hj_2.htm"
 
-TEAMS="F01 P01 P02 F03 P03 F04 P04 AH JH" 
+TEAMS_CONF=$(dirname $0)/teams.conf
+if [ -f $TEAMS_CONF ] 
+then
+    . $TEAMS_CONF 
+else
+    echo $TEAMS_CONF not found
+    exit 1
+fi
+
 #TEAMS="F01 P04 " 
 declare -a MONTHS
 declare -a MONTHS_REGEXP
