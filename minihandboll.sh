@@ -188,9 +188,25 @@ finddat()
 	    GLOC=$(grep -i hall $f | sed 's,Hall:[ ]*,,g')  
 	    echo "GDATE: $GDATE => date -d \"$DATE\" \"+%y-%m-%d\""
 	    echo "Convert $DATE"
-	    
-	    echo "$(date -d "$DATE" "+%y-%m-%d")   dag    Nord                 - olika-lag                 -     $GLOC                 " >> ../$GENDER_SHORT.txt
+
+	    FIRST_TIME=$(grep "^[0-9][0-9][\.,][0-9][0-9][ \t]*" $t | head -1 | awk '{ print $1}')
+	    LAST_TIME=$(grep "^[0-9][0-9][\.,][0-9][0-9][ \t]*" $t | tail -1 | awk '{ print $1}')
+
+	    FIRST_TIME=${FIRST_TIME//,/.}
+	    LAST_TIME=${LAST_TIME//,/.}
+
+#	    echo "FIRST_TIME: $FIRST_TIME"
+#	    echo "LAST_TIME: "
+	    if [ "$FIRST_TIME" = "" ]
+		then
+		FIRST_TIME="dag  "
+	    fi
+
+
+	    echo "$(date -d "$DATE" "+%y-%m-%d") $FIRST_TIME    Nord                 - olika-lag                 -     $GLOC                 ($FIRST_TIME-$LAST_TIME) " >> ../$GENDER_SHORT.txt
 #	    echo "in $(pwd) created  ../$GENDER_SHORT.txt"
+
+
 	done
     done | sort
 
@@ -201,10 +217,10 @@ finddat()
 
 } 
 
-cleanup
-getdocs
-
-finddocs ${FIL_ARKIV_TXT}
+### KEEP
+#cleanup
+#getdocs
+#finddocs ${FIL_ARKIV_TXT}
 
 gentxt 
 #gentxt flickor
