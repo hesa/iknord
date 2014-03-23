@@ -2,6 +2,7 @@
 
 
 TEAMS_CONF=$(dirname $0)/teams.conf
+LOGO=$(dirname $0)/ik-nord.png
 if [ -f $TEAMS_CONF ] 
 then
     . $TEAMS_CONF 
@@ -9,6 +10,8 @@ else
     echo $TEAMS_CONF not found
     exit 1
 fi
+
+FAKE_DATA_DIR=~/opt/iknord/nord-data-backup
 
 #TEAMS="F01 P04 " 
 declare -a MONTHS
@@ -19,6 +22,20 @@ BACKUP_DIR=$(pwd)/results/$(date +%Y-%m-%d)
 
 MYTMPDIR=tmp/match
 HTML_PAGE=$(pwd)/index.html
+
+fix_logo() 
+{
+    if [ -f $LOGO ] 
+    then
+	cp $LOGO ${MYTMPDIR}
+	cp $LOGO ${MYTMPDIR}/../
+	cp $LOGO ${MYTMPDIR}/../../
+    else
+	echo $LOGO not found
+	exit 1
+    fi
+}
+
 
 
 init()
@@ -65,9 +82,64 @@ clean_up()
 
 set_up()
 {
-    mkdir -p        ${MYTMPDIR}
-    cp ik-nord.png  ${MYTMPDIR}
+    
+    for i in $TEAMS
+    do
+
+	if [ "$(uname -n)" = "schnittke" ] || [ "$DEBUG" = "true" ]
+	    then
+	    # local if host 
+	    fetch_file $i
+	else
+	    fetch_url $i
+	fi
+
+	if [ $? -ne 0 ]
+	then
+	    exit 0
+	fi
+	
+	diff $i.txt ../../$i.txt
+	RET=$?
+#    if [ $RET -ne 0 ]
+#	then
+#	echo "Lag: $i $(date)" >> ../../nytt-schema.txt
+#    fi
+	cp $i.txt ../../
+	
+    done
+
 }
+
+fetch_file() 
+{
+    TEAM=$1
+    
+    MATCH_DIR=$FAKE_DATA_DIR/${MYTMPDIR}
+
+    if [ ! -d $MATCH_DIR ]
+    then
+	echo "No dir ($MATCH_DIR)/tmp/match with fake data"
+	exit 1
+    fi
+
+#    if [ -f ${MATCH_DIR}/$1.txt ]
+#    then
+#	echo "FILE EXISTS :)   ${MATCH_DIR}/$1.txt"
+#    else
+#	echo "NO :()   ${MATCH_DIR}/$1.txt"
+#    fi
+
+    cp ${MATCH_DIR}/$1.txt .
+    
+    if [ ! -d $BACKUP_DIR ]
+    then
+	mkdir -p $BACKUP_DIR
+    fi
+    cp $1.txt $BACKUP_DIR/$1.html
+
+}
+
 
 fetch_url()
 {
@@ -116,9 +188,6 @@ fetch_url()
 	fi
     fi
 
-
-
-
     if [ ! -d $BACKUP_DIR ]
     then
 	mkdir -p $BACKUP_DIR
@@ -134,6 +203,59 @@ fetch_url()
 }
 
 
+get_cafe()
+{
+    TEAM=$1
+    
+    export CAFE_RESP="$TEAM"
+
+    grep -i -e masthuggshallen $TEAM.txt | grep "[0-9][0-9]-[0-9][0-9]-[0-9][0-9]" | \
+	sed -e 's,<[a-zA-Z0-9 ]*=[0-9a-zA-Z#]*>[ \t]*[0-9]*[ \t]*[0-9]*,,g' \
+        -e "s,</font>,,g" \
+        -e "s,^[ \t]*,,g" | \
+        awk '{ printf "%s %s %s\n" , $1,  $2, ENVIRON["CAFE_RESP"] } ' >> cafe-$TEAM.tmp
+}
+
+create_cafe() 
+{
+    start_file cafe.tmp "Cafe-arrangemang" "$MYTEAMS" "2013-2014"
+    rm cafe.tmp2
+    for i in $(ls cafe-*.tmp)
+    do
+	cat $i >> cafe.tmp2
+    done 
+    sort -n cafe.tmp2 > cafe.tmp3
+
+
+    idx=0
+    while (true) 
+    do
+	MO="${MONTHS[$idx]}"
+	if [ "$MO" = "" ]; then break ; fi
+	
+	echo "#$MO" >> cafe.tmp
+	grep "${MONTHS_REGEXP[$idx]}" cafe.tmp3| awk '{ print $0 "\n"}'  >> cafe.tmp
+	echo "" >> cafe.tmp
+	idx=$(( $idx + 1 ))
+
+    done
+
+    end_file cafe.tmp
+
+    CAFE_MD=cafe.md
+    PDF_FILE=${CAFE_MD%.md}.pdf
+    HTML_FILE=${CAFE_MD%.md}.html
+    iconv -f ISO-8859-15  -t UTF-8 cafe.tmp > $CAFE_MD
+
+    cleanup_sv $CAFE_MD
+    GENS=""
+    pandoc   $CAFE_MD -o $PDF_FILE
+    if [ $? != 0 ] ; then echo "Failed generating PDF ($PDF_FILE)" ; else GENS="$GENS $PDF_FILE"; fi
+    pandoc   $CAFE_MD -o $HTML_FILE
+    if [ $? != 0 ] ; then echo "Failed generating HTML ($HTML_FILE)" ; else GENS="$GENS $HTML_FILE"; fi
+    cleanup_sv $HTML_FILE
+}
+
 get_games()
 {
 
@@ -141,7 +263,7 @@ get_games()
 
     TEAM=$1
 
-    dos2unix $TEAM.txt
+    dos2unix $TEAM.txt >/dev/null  2>/dev/null
 #    file $TEAM.txt
 #    sleep 20
     grep -i -e nord -e sammandrag $TEAM.txt | grep "[0-9][0-9]-[0-9][0-9]-[0-9][0-9]" | \
@@ -275,12 +397,12 @@ cleanup_sv()
     mv  $FILE_TO_CLEAN ${FILE_TO_CLEAN}.tmp
     cat $FILE_TO_CLEAN.tmp | \
 	sed -e "s,ö,\&ouml;,g" \
-	 -e "s,Ö,\&Ouml;,g" \
-	 -e "s,Ä,\&Auml;,g" \
-	 -e "s,ä,\&auml;,g" \
-	 -e "s,Å,\&Aring;,g" \
-	 -e "s,å,\&aring;,g" \
-	 -e "s,Ã€,\&auml;,g" \
+	-e "s,Ö,\&Ouml;,g" \
+	-e "s,Ä,\&Auml;,g" \
+	-e "s,ä,\&auml;,g" \
+	-e "s,Å,\&Aring;,g" \
+	-e "s,å,\&aring;,g" \
+	-e "s,Ã€,\&auml;,g" \
 	| LC_ALL="POSIX" 	 sed  -e  "s/[\d128-\d255]//g" \
 	> ${FILE_TO_CLEAN} 
  #   echo "   --- cleaning up $1"
@@ -335,7 +457,8 @@ create_all()
     if [ "$HOME" != "all" ]
     then
 	start_file games.tmp  "Hemmamatcher" "$MYTEAMS" "2013-2014"
-    else
+    elif [ "$HOME" != "home" ]
+    then
 	start_file games.tmp  "Matcher" "$MYTEAMS" "2013-2014"
     fi
 
@@ -348,7 +471,8 @@ create_all()
 	if [ "$HOME" != "all" ]
 	then
 	    start_file month.tmp  "Hemmamatcher" "$MYTEAMS" "$MO / 2013-2014"
-	else
+	elif [ "$HOME" != "home" ]
+	then
 	    start_file month.tmp  "Matcher" "$MYTEAMS" "$MO / 2013-2014"
 	fi
 
@@ -364,14 +488,16 @@ create_all()
 	MONTH_PDF_FILE=${MONTH_MD%.md}.pdf
 	MONTH_HTML_FILE=${MONTH_MD%.md}.html
 
-	
 	cleanup_sv $MONTH_MD
+	GENS=""
 	pandoc   $MONTH_MD -o $MONTH_PDF_FILE
+	if [ $? != 0 ] ; then echo "Failed generating PDF ($MONTH_PDF_FILE)" ; else GENS="$GENS $MONTH_PDF_FILE"; fi
 	pandoc   $MONTH_MD -o $MONTH_HTML_FILE
+	if [ $? != 0 ] ; then echo "Failed generating HTML ($MONTH_HTML_FILE)" ; else GENS="$GENS $MONTH_HTML_FILE"; fi
 	cleanup_sv $MONTH_HTML_FILE
-
 	
-	echo "created:  $MONTH_PDF_FILE  $MONTH_HTML_FILE (from $(file $MONTH_MD))"
+	
+	echo "created:  $GENS (from $(file $MONTH_MD))"
     done
     
 
@@ -400,8 +526,8 @@ create_all()
 		tohtml "  <li>"
 		tohtml "      $CMO / Samtliga: <a href=\"ik-nord-alla-$CMO.pdf\">(pdf)</a> <a href=\"ik-nord-alla-$CMO.html\">(html)</a>"
 		tohtml " Hemma: <a href=\"ik-nord-hemma-$CMO.pdf\">(pdf)</a> <a href=\"ik-nord-hemma-$CMO.html\">(html)</a>"
-	    tohtml "  </li>"
-	    
+		tohtml "  </li>"
+		
 	    done
 	    tohtml "</ul>"
 	else
@@ -418,7 +544,7 @@ create_all()
 	    tohtml "Samtliga matcher: <a href=\"$PDF_FILE\">(pdf)</a> <a href=\"$HTML_FILE\">(html)</a>"
 	    tohtml "<br>"
 	    if [ "$(echo ${!MYTEAMS} | grep -e 'txt$' | wc -l)" = "0" ]
-		then
+	    then
 		tohtml "L&auml;nk till seriesidan: <a href=\"${!MYTEAMS}\">${MYTEAMS}</a>"
 	    else
 		if [ "$(echo ${MYTEAMS} | grep F[0-9] | wc -l )" = "0" ]
@@ -488,55 +614,35 @@ add_all()
 }
 
 
+
+
 ########
+
+
 
 init
 clean_up
+mkdir -p   ${MYTMPDIR}
+fix_logo
+cd         ${MYTMPDIR}
 set_up
-cd       ${MYTMPDIR}
-
-
-for i in $TEAMS
-do
-    fetch_url $i
-    if [ $? -ne 0 ]
-    then
-	exit 0
-    fi
-
-    diff $i.txt ../../$i.txt
-    RET=$?
-#    if [ $RET -ne 0 ]
-#	then
-#	echo "Lag: $i $(date)" >> ../../nytt-schema.txt
-#    fi
-    cp $i.txt ../../
-
-done
-
-
 
 
 start_html
 
-
-#if [ -f ../../nytt-schema.txt ]
-#then
-#    tohtml "Nytt schema funnet: $(cat ../../nytt-schema.txt)"
-#else
-#    tohtml "Inga uppdateringar p&aring; www3.proteamonline.se funna $(date "+%Y-%m-%d %H:%M:%S")"
-#fi
-
-
 for i in $TEAMS
 do
     get_games $i
+    get_cafe  $i
 done
+
 
 
 tohtml "<h2>Spelschema f&ouml;r samtliga lag: $TEAMS</h2>"
 create_all ik-nord-alla.md  "$TEAMS" "all" ik-nord-alla-
 create_all ik-nord-hemma.md "$TEAMS" "home" ik-nord-hemma-
+
+create_cafe
 
 tohtml "<h2>Individuella spelschema f&ouml;r lagen: $TEAMS</h2>"
 for i in $TEAMS
