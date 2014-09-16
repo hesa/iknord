@@ -36,6 +36,28 @@ fix_logo()
     fi
 }
 
+SQLITE=sqlite3
+
+db_command() {
+    echo "db_command:   $*  [${DB_DIR}/IKNORD.sqlite]" ;
+    echo "$*" | $SQLITE ${DB_DIR}/IKNORD.sqlite
+}
+
+clean_db() 
+{
+    DB_DIR=$(pwd)
+    rm IKNORD.sqlite
+    DB_CREATE="CREATE TABLE matcher (date DATE, time TIME, team varchar(50), home varchar(50), away varchar(50));"
+
+    db_command "$DB_CREATE"
+}
+
+insert_game() 
+{
+    DB_GAME="INSERT INTO matcher VALUES ('$1','$2','$3','$4','$5');"
+
+    db_command "$DB_GAME"
+}
 
 
 init()
@@ -47,7 +69,9 @@ init()
 	idx=$(( $idx + 1))
     done
     idx=0
-    for i in ^13-09- ^13-10- ^13-11- ^13-12- ^14-01- ^14-02- ^14-03- ^14-04- 
+    YEAR1_NR=14
+    YEAR2_NR=14
+    for i in ^$YEAR1_NR-09- ^$YEAR1_NR-10- ^$YEAR1_NR-11- ^$YEAR1_NR-12- ^$YEAR2_NR-01- ^$YEAR2_NR-02- ^$YEAR2_NR-03- ^$YEAR2_NR-04- 
     do
 	MONTHS_REGEXP[$idx]=$i
 	idx=$(( $idx + 1))
@@ -71,6 +95,7 @@ init()
 	    CURRENT_MONTH="Mars"
 	    ;;
     esac
+    clean_db
 }
 
 
@@ -99,7 +124,7 @@ set_up()
 	    exit 0
 	fi
 	
-	diff $i.txt ../../$i.txt
+	diff $i.txt ../../$i.txt >/dev/null 2>/dev/null
 	RET=$?
 #    if [ $RET -ne 0 ]
 #	then
@@ -131,7 +156,7 @@ fetch_file()
 #    fi
 
     cp ${MATCH_DIR}/$1.txt .
-    
+
     if [ ! -d $BACKUP_DIR ]
     then
 	mkdir -p $BACKUP_DIR
@@ -162,6 +187,7 @@ fetch_url()
     fi
     
     curl "$URL" -o $1.txt
+
     if [ "$?" != "0" ]
     then
 	if [ -f $1.txt.save ]
@@ -218,7 +244,7 @@ get_cafe()
 
 create_cafe() 
 {
-    start_file cafe.tmp "Cafe-arrangemang" "$MYTEAMS" "2013-2014"
+    start_file cafe.tmp "Cafe-arrangemang" "$MYTEAMS" "2014-2015"
     rm cafe.tmp2
     for i in $(ls cafe-*.tmp)
     do
@@ -234,7 +260,7 @@ create_cafe()
 	if [ "$MO" = "" ]; then break ; fi
 	
 	echo "#$MO" >> cafe.tmp
-	grep "${MONTHS_REGEXP[$idx]}" cafe.tmp3| awk '{ print $0 "\n"}'  >> cafe.tmp
+	grep -i "${MONTHS_REGEXP[$idx]}" cafe.tmp3| awk '{ print $0 "\n"}'  >> cafe.tmp
 	echo "" >> cafe.tmp
 	idx=$(( $idx + 1 ))
 
@@ -259,7 +285,81 @@ create_cafe()
 get_games()
 {
 
- #   echo "get_games($i)"
+    echo "get_games($i)"
+
+    TEAM=$1
+
+    dos2unix $TEAM.txt >/dev/null  2>/dev/null
+
+    html2text $TEAM.txt > $TEAM.tmp1
+
+    cat $TEAM.tmp1 | awk 'BEGIN { found=0; }  /^Omgång/ { found=1;} /Nyheter/ { found=0;} { if ( found==1) { print $0} } ' > $TEAM.tmp
+
+    cat $TEAM.tmp | grep -v Omgång | while (true); 
+    do
+	read line
+#	echo "line: $line"
+	if [ "$line" = "" ]; then break ; fi
+
+	if [[ "$line" =~ ^[a-zA-Z].* ]];
+	then
+	    # New date
+	    DAY=$(echo ${line:0:2} | sed 's,[ ]*$,,g')
+	    DATE=$(echo ${line:3:5} | sed 's,[ ]*$,,g' | awk ' {print $1}')
+	    TIME=$(echo ${line:8:6} | sed 's,[ ]*$,,g')
+#	    echo "time1: $DATE   '$line'"
+	    PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
+#	    FIELD=$(echo ${line:73:20} | sed 's,[ \t\r]*$,,g')
+	else
+#	    echo "FOUND, keeping date: $DATE"
+	    TIME=$(echo ${line:0:5} | sed 's,[ ]*$,,g')
+#	    echo "time2: $DATE   '$line'"
+	    PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
+	fi
+	
+	HOME1=(${PLAYING_TEAMS//-/ })
+	HOME=$(echo ${HOME1} | sed 's,_, ,g')
+	
+	SIZE=${#HOME}
+	SIZE=$(( $SIZE + 2 ))
+#	echo "SIZE: $SIZE"
+	AWAY1=${PLAYING_TEAMS:$SIZE:100}
+	AWAY2=(${AWAY1//-/ })
+	AWAY=$(echo ${AWAY2} | sed 's,_, ,g')
+	
+	NEW_DAY=$(echo $DATE | sed 's,\([0-9]*\)/[0-9]*,\1,g')
+	NEW_MONTH=$(echo $DATE | sed 's,[0-9]*/\([0-9]*\),\1,g')
+
+	NEW_DATE=$(date -d "$NEW_MONTH/$NEW_DAY" '+%y-%m-%d' )
+
+	echo "DATE: '$DATE' => $NEW_DAY $NEW_MONTH => $NEW_DATE"
+
+#	echo ""
+#	echo "line: $line"
+#	echo "  day:   $DAY"
+#	echo "  date:  $DATE"
+	echo "  time:  $TIME '$DATE'"
+#	echo "  teams: $PLAYING_TEAMS"
+#	echo "  home:  $HOME"
+#	echo "  away:  $AWAY"
+#	echo "  field: $FIELD"
+#	echo "NEW_DATE: $NEW_DATE  $DATE $line"
+	echo "$NEW_DATE $TIME $TEAM $HOME - $AWAY ($FIELD)"
+        insert_game "$NEW_DATE"   "$TIME" "$TEAM" "$HOME"  "$AWAY"
+    done
+#   >  $TEAM.tmp2
+
+#exit
+#    echo " ==== get_games $1 ==> $TEAM-tmp2 "
+#    ls -al  $TEAM.tmp
+#    ls -al  $TEAM.tmp2
+
+}
+
+get_games_old()
+{
+
+    echo "get_games($i)"
 
     TEAM=$1
 
@@ -276,7 +376,7 @@ get_games()
     cat $TEAM.tmp | while (true); 
     do
 	read line
-#	echo "line: $line"
+	echo "line: $line"
 	if [ "$line" = "" ]; then break ; fi
 	DATE=$(echo ${line:0:9} | sed 's,[ ]*$,,g')
 	TIME=$(echo ${line:11:5} | sed 's,[ ]*$,,g')
@@ -312,7 +412,7 @@ month_parser()
     echo "#$MONTH"  >> $OUT_FILE
     echo "#$MONTH"  >> $MONTH_FILE
 
- #   echo "FIND $REG in $FILE"
+#    echo "FIND $REG in $FILE"
 #    grep 04 $FILE
 
     grep "$MONTH_RE" $FILE | while (true); do
@@ -321,11 +421,15 @@ month_parser()
 
 	if [ "$REG" != "all" ]
 	then
-#	    echo "#LINE1: $newline  \"$REG\"  "
-#	    echo "#  re: $REG"
-	    LINE=$(echo "$newline" | grep "[I]*[K]*[ ]*Nord -" | grep -e asthugg -e alhalla -e iseberg)
-#	    echo "#LINE2: $LINE"
+	    echo "-----------------------------------------------------"
+	    echo "#LINE1: $newline  \"$REG\"  "
+	    echo "#  re: $REG"
+#	    LINE=$(echo "$newline" | grep "[I]*[K]*[ ]*Nord -" | grep -e asthugg -e alhalla -e iseberg)
+	    LINE=$(echo "$newline" | grep "[I]*[K]*[ ]*Nord[ \t]*-")
+	    echo "#LINE2: '$LINE'"
+	    echo "-----------------------------------------------------"
 	    if [ "$LINE" != "" ] ; then
+		echo "# SAVE '$LINE'"
 		echo "$LINE"  >> $OUT_FILE
 		echo "$LINE"  >> $MONTH_FILE
 	    fi
@@ -456,10 +560,10 @@ create_all()
 
     if [ "$HOME" != "all" ]
     then
-	start_file games.tmp  "Hemmamatcher" "$MYTEAMS" "2013-2014"
+	start_file games.tmp  "Hemmamatcher" "$MYTEAMS" "2014-2015"
     elif [ "$HOME" != "home" ]
     then
-	start_file games.tmp  "Matcher" "$MYTEAMS" "2013-2014"
+	start_file games.tmp  "Matcher" "$MYTEAMS" "2014-2015"
     fi
 
     idx=0
@@ -470,10 +574,10 @@ create_all()
 
 	if [ "$HOME" != "all" ]
 	then
-	    start_file month.tmp  "Hemmamatcher" "$MYTEAMS" "$MO / 2013-2014"
+	    start_file month.tmp  "Hemmamatcher" "$MYTEAMS" "$MO / 2014-2015"
 	elif [ "$HOME" != "home" ]
 	then
-	    start_file month.tmp  "Matcher" "$MYTEAMS" "$MO / 2013-2014"
+	    start_file month.tmp  "Matcher" "$MYTEAMS" "$MO / 2014-2015"
 	fi
 
 
@@ -585,11 +689,11 @@ start_html()
     echo "creating $HTML_PAGE in $(pwd)"
     tohtml "<html xmlns=\""http://www.w3.org/1999/xhtml\"" xml:lang=\""sv\"" lang=\""sv\"">"
     tohtml "<head>"
-    tohtml "<title>Spelschema f&ouml;r IK Nord 2013/2014 ($TEAMS)</title>"
+    tohtml "<title>Spelschema f&ouml;r IK Nord 2014/2015 ($TEAMS)</title>"
     tohtml "<img src=\"ik-nord.png\">"
     tohtml "</head>"
     tohtml "<body>"
-    tohtml "<h1>Spelschema f&ouml;r IK Nord 2013/2014</h1>"
+    tohtml "<h1>Spelschema f&ouml;r IK Nord 2014/2015</h1>"
 }
 
 
@@ -627,8 +731,8 @@ fix_logo
 cd         ${MYTMPDIR}
 set_up
 
-
 start_html
+
 
 for i in $TEAMS
 do
