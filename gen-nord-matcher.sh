@@ -11,6 +11,12 @@ else
     exit 1
 fi
 
+if [ "$1" = "--debug" ]
+then
+    DEBUG=true
+    shift
+fi
+
 FAKE_DATA_DIR=~/opt/iknord/nord-data-backup
 
 #TEAMS="F01 P04 " 
@@ -52,11 +58,16 @@ db_command() {
 
 clean_db() 
 {
-    mkdir -p db-backup
-    mv IKNORD.sqlite db-backup/IKNORD-$(date '+%y-%m-%d').sqlite
-    DB_CREATE="CREATE TABLE matcher (date DATE, time TIME, team varchar(50), home varchar(50), away varchar(50));"
-
-    db_command "$DB_CREATE"
+    if [ "$DEBUG" = "true" ]
+    then
+	echo not cleaning db
+    else
+	mkdir -p db-backup
+	mv IKNORD.sqlite db-backup/IKNORD-$(date '+%y-%m-%d').sqlite
+	DB_CREATE="CREATE TABLE matcher (date DATE, time TIME, team varchar(50), home varchar(50), away varchar(50));"
+	
+	db_command "$DB_CREATE"
+    fi
 }
 
 insert_game() 
@@ -289,6 +300,11 @@ create_cafe()
 
 get_games()
 {
+
+    if [ "$DEBUG" = "true" ]
+    then
+	return
+    fi
 
 #    echo "get_games($i)"
 
@@ -586,9 +602,13 @@ create_all()
     then
 #	echo "GENERATING ALL TEAMS"
 	SINGLE_TEAM_STRING=""
+	TEAM_TITLE="$TEAMS"
+	SOURCE_LINK="http://www.svenskhandboll.se/Handbollinfo/Tavling"
     else
 #	echo "GENERATING SINGLE TEAM TEAM='$MYTEAMS'"
 	SINGLE_TEAM_STRING=" AND TEAM='$MYTEAMS' "
+	TEAM_TITLE="$MYTEAMS"
+	SOURCE_LINK=${!MYTEAMS}
     fi
  
     NEW_PDF_FILE=${MD_FILE%.md}.pdf
@@ -614,7 +634,7 @@ create_all()
 
 
     echo "# $TITLE $PERIOD" >> $TMP_FILE
-    echo "# Lag: $MYTEAMS" >> $TMP_FILE
+    echo "# Lag: $TEAM_TITLE" >> $TMP_FILE
 
 
     SELECT_STMT="$SELECT_STMT_START WHERE $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
@@ -640,12 +660,15 @@ create_all()
     echo "" >> $TMP_FILE
     echo "" >> $TMP_FILE
     echo "" >> $TMP_FILE
-    
+ 
+
+    echo "SOURCE_LINK: $SOURCE_LINK"
+   
     echo "### Om dokumentet" >> $TMP_FILE
     echo  >> $TMP_FILE
     echo "URL: http://schema.iknord.nu/" >> $TMP_FILE
     echo  >> $TMP_FILE
-    echo "K&auml;lla : http://www.svenskhandboll.se/Handbollinfo/Tavling" >> $TMP_FILE
+    echo "K&auml;lla : $SOURCE_LINK" >> $TMP_FILE
     echo  >> $TMP_FILE
     echo "Genererades fr&aring;n k&auml;llan ovan:    $(date)" >> $TMP_FILE
     
