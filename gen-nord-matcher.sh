@@ -637,7 +637,8 @@ create_all()
     echo "# Lag: $TEAM_TITLE" >> $TMP_FILE
 
 
-    SELECT_STMT="$SELECT_STMT_START WHERE $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
+	SELECT_STMT="$SELECT_STMT_START WHERE $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
+	
 #    echo "SELECT_STMT: $SELECT_STMT"
     
     db_command $SELECT_STMT  | while (true)
@@ -653,7 +654,12 @@ create_all()
 	TEAM=$(echo $LINE | awk ' BEGIN {FS="|"} { print $3 ;}' )
 	HOME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $4 ;}' )
 	AWAY=$(echo $LINE | awk ' BEGIN {FS="|"} { print $5 ;}' )
-	echo "$DATE $TIME, $TEAM, $HOME - $AWAY" >> $TMP_FILE
+	if [ "$MYTEAMS" = "all" ]
+	then
+	    echo "$DATE $TIME, $TEAM, $HOME - $AWAY" >> $TMP_FILE
+	else
+	    echo "$DATE $TIME, $HOME - $AWAY" >> $TMP_FILE
+	fi
 	echo "" >> $TMP_FILE
     done
 
