@@ -52,7 +52,8 @@ db_command() {
 
 clean_db() 
 {
-    rm IKNORD.sqlite
+    mkdir -p db-backup
+    mv IKNORD.sqlite db-backup/IKNORD-$(date '+%y-%m-%d').sqlite
     DB_CREATE="CREATE TABLE matcher (date DATE, time TIME, team varchar(50), home varchar(50), away varchar(50));"
 
     db_command "$DB_CREATE"
@@ -555,7 +556,7 @@ create_month_file()
 create_all()
 {
     MD_FILE=$1
-    MYTEAMS="$2"
+    MYTEAMS="$(echo $2 | sed 's,[ ]*$,,g')"
     HOME=$3
     MONTH_MD_BASE=$4
     MONTH_ARG=$5
@@ -567,6 +568,12 @@ create_all()
 	DATE_STRING="  "
 	MONTH_STRING=''
 	PERIOD="$LONG_YEAR1_NR-$LONG_YEAR2_NR"
+
+	if [ "$MYTEAMS" != "all" ]
+	then
+	    MD_FILE=${MONTH_MD_BASE}${MONTH_STRING}.md
+	fi
+
     else
 	DATE_STRING=" AND DATE LIKE '${MONTHS_REGEXP[$MONTH_ARG]}%' "
 	MONTH_STRING="${MONTHS[$MONTH_ARG]}"
@@ -575,15 +582,17 @@ create_all()
     fi
 
 
-    if [ "$(echo $MYTEAMS | grep ' ' | wc -l)" != "0" ]
+    if [ "$MYTEAMS" = "all" ]
     then
+#	echo "GENERATING ALL TEAMS"
 	SINGLE_TEAM_STRING=""
     else
+#	echo "GENERATING SINGLE TEAM TEAM='$MYTEAMS'"
 	SINGLE_TEAM_STRING=" AND TEAM='$MYTEAMS' "
     fi
  
-    MONTH_PDF_FILE=${MD_FILE%.md}.pdf
-    MONTH_HTML_FILE=${MD_FILE%.md}.html
+    NEW_PDF_FILE=${MD_FILE%.md}.pdf
+    NEW_HTML_FILE=${MD_FILE%.md}.html
 
     TMP_FILE=$MD_FILE.tmp
 
@@ -594,13 +603,13 @@ create_all()
     SELECT_STMT_START="SELECT date, time, team, home, away FROM matcher "
     SELECT_STMT_END=" ORDER BY DATE "
 
-    TEAM_STRING=" WHERE HOME LIKE '%I%K%Nord%' "
     if [ "$HOME" != "all" ]
     then
 	TITLE="Hemmamatcher"	
+	TEAM_STRING=" HOME LIKE '%I%K%Nord%' "
     else
 	TITLE="Matcher"
-	TEAM_STRING=" $TEAM_STRING  OR AWAY LIKE '%I%K%Nord%'  "
+	TEAM_STRING=" ( HOME LIKE '%I%K%Nord%'  OR AWAY LIKE '%I%K%Nord%' ) "
     fi
 
 
@@ -608,8 +617,8 @@ create_all()
     echo "# Lag: $MYTEAMS" >> $TMP_FILE
 
 
-    SELECT_STMT="$SELECT_STMT_START $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
-    echo "SELECT_STMT: $SELECT_STMT"
+    SELECT_STMT="$SELECT_STMT_START WHERE $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
+#    echo "SELECT_STMT: $SELECT_STMT"
     
     db_command $SELECT_STMT  | while (true)
     do
@@ -617,6 +626,8 @@ create_all()
 	if [ "$LINE" = "" ] ; then break; fi
 #	echo "DB:  $LINE"
 	
+#	echo "TEAM: $TEAM"
+
 	DATE=$(echo $LINE | awk ' BEGIN {FS="|"} { print $1 ;}' )
 	TIME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $2 ;}' )
 	TEAM=$(echo $LINE | awk ' BEGIN {FS="|"} { print $3 ;}' )
@@ -626,78 +637,60 @@ create_all()
 	echo "" >> $TMP_FILE
     done
 
+    echo "" >> $TMP_FILE
+    echo "" >> $TMP_FILE
+    echo "" >> $TMP_FILE
+    
+    echo "### Om dokumentet" >> $TMP_FILE
+    echo  >> $TMP_FILE
+    echo "URL: http://schema.iknord.nu/" >> $TMP_FILE
+    echo  >> $TMP_FILE
+    echo "K&auml;lla : http://www.svenskhandboll.se/Handbollinfo/Tavling" >> $TMP_FILE
+    echo  >> $TMP_FILE
+    echo "Genererades fr&aring;n k&auml;llan ovan:    $(date)" >> $TMP_FILE
+    
     mv $TMP_FILE $MD_FILE
 
-    pandoc   $MD_FILE -o $MONTH_PDF_FILE
-    pandoc   $MD_FILE -o $MONTH_HTML_FILE
+    cleanup_sv $MD_FILE
+    
+    pandoc   $MD_FILE -o $NEW_PDF_FILE
+    pandoc   $MD_FILE -o $NEW_HTML_FILE
 
-    echo $(pwd)/$MD_FILE
-    echo $(pwd)/$MONTH_PDF_FILE
-    echo $(pwd)/$MONTH_HTML_FILE
+    cleanup_sv $NEW_HTML_FILE
 
-}
 
-create_team()
-{
-    MD_FILE=$1
-    TEAM="$1"
-    HOME=$3
-    MONTH_MD_BASE=$4
+#    echo $(pwd)/$MD_FILE
+#    echo $(pwd)/$NEW_PDF_FILE
+#    echo $(pwd)/$NEW_HTML_FILE
 
-    MONTH_PDF_FILE=${MD_FILE%.md}.pdf
-    MONTH_HTML_FILE=${MD_FILE%.md}.html
-
-    TMP_FILE=$MD_FILE.tmp
-
-    echo "![](ik-nord.png)   www.iknord.nu" > $TMP_FILE
-    echo  >> $TMP_FILE
-#    echo >$TMP_FILE
-
-    SELECT_STMT_START="SELECT date, time, team, home, away FROM matcher "
-    SELECT_STMT_END=" ORDER BY DATE "
-
-    TEAM_STRING=" WHERE HOME LIKE '%I%K%Nord%' "
-    if [ "$HOME" != "all" ]
+    if [ "$SINGLE_TEAM_STRING" = "" ]
     then
-	TITLE="Hemmamatcher"	
+	echo "all teams, $MONTH_ARG, $HOME, ..."
+	if [ "$HOME" != "all" ]
+	then
+	    if [ "$MONTH_STRING" = "" ]
+	    then
+		tohtml "Hemmamatcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
+	    else
+		tohtml "${MONTHS[$MONTH_ARG]} <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
+	    fi
+	else
+	    tohtml "Alla matcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
+	fi
     else
-	TITLE="Matcher"
-	TEAM_STRING=" $TEAM_STRING  OR AWAY LIKE '%I%K%Nord%'  "
+	echo "single $SINGLE_TEAM_STRING ($MONTH_STRING) => $MD_FILE => $NEW_HTML_FILE   "
+	if [ "$HOME" != "all" ]
+	then
+	    echo "  all $NEW_HTML_FILE"
+	    tohtml "Hemmamatcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
+	else
+	    echo "  home $HTML_FILE"
+	    tohtml "Samtliga matcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
+	fi
     fi
 
 
-    echo "# $TITLE 2014-2015" >> $TMP_FILE
-    echo "# Lag: $MYTEAMS" >> $TMP_FILE
-
-
-    SELECT_STMT="$SELECT_STMT_START $TEAM_STRING $SELECT_STMT_END ;"
-
-    db_command $SELECT_STMT  | while (true)
-    do
-	read LINE
-	if [ "$LINE" = "" ] ; then break; fi
-#	echo "DB:  $LINE"
-	
-	DATE=$(echo $LINE | awk ' BEGIN {FS="|"} { print $1 ;}' )
-	TIME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $2 ;}' )
-	TEAM=$(echo $LINE | awk ' BEGIN {FS="|"} { print $3 ;}' )
-	HOME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $4 ;}' )
-	AWAY=$(echo $LINE | awk ' BEGIN {FS="|"} { print $5 ;}' )
-	echo "$DATE $TIME, $TEAM, $HOME - $AWAY" >> $TMP_FILE
-	echo "" >> $TMP_FILE
-    done
-
-    mv $TMP_FILE $MD_FILE
-
-    pandoc   $MD_FILE -o $MONTH_PDF_FILE
-    pandoc   $MD_FILE -o $MONTH_HTML_FILE
-
-    echo $(pwd)/$MD_FILE
-    echo $(pwd)/$MONTH_PDF_FILE
-    echo $(pwd)/$MONTH_HTML_FILE
-
 }
-
 
 
 create_all_old()
@@ -911,20 +904,22 @@ start_html
 
 for i in $TEAMS
 do
-   get_games $i
+     get_games $i
 #    get_cafe  $i
 done
 
 
 tohtml "<h2>Spelschema f&ouml;r samtliga lag: $TEAMS</h2>"
-create_all ik-nord-alla.md  "$TEAMS" "all" ik-nord-alla- all
-create_all ik-nord-hemma.md "$TEAMS" "home" ik-nord-hemma- all
+create_all ik-nord-alla.md  "all" "all" ik-nord-alla- all
+create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- all
 
 
+tohtml "<h2>Hemmamatcher per m&aringnad:</h2>"
 MONTH_IDX=0
 while [ "${MONTHS_REGEXP[$MONTH_IDX]}" != "" ]
 do
-    create_all ik-nord-hemma.md "$TEAMS" "home" ik-nord-hemma- "$MONTH_IDX"
+#    tohtml "<h2>${MONTHS[$MONTH_IDX]}</h2>"
+    create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- "$MONTH_IDX"
     MONTH_IDX=$(( $MONTH_IDX + 1))
 done
 
@@ -933,7 +928,9 @@ tohtml "<h2>Individuella spelschema f&ouml;r lagen: $TEAMS</h2>"
 for i in $TEAMS
 do
     tohtml "<h2>$i</h2>"
-    create_all ik-nord-$i.md $i "all" ik-nord-$i- all
+    create_all ik-nord-$i.md $i "all" ik-nord-$i-alla all
+    tohtml "<br>"
+    create_all ik-nord-$i.md $i "home" ik-nord-$i-hemma all
 done
 
 cp *.pdf ../../
