@@ -166,23 +166,112 @@ gentxt()
 finddat()
 {
     GENDER=$1
+    GENDER_SHORT="$2"
 
-    if [ "$GENDER" = "flickor" ]
-	then
-	GENDER_SHORT="F04"
-    else
-	GENDER_SHORT="P04"
-    fi
 
     cd $GENDER 
     rm ../$GENDER_SHORT.txt
+
+    #
+    #  Find out when Nord plays (what files)
+    #
     for f in $(grep -l -i nord *.txt)
     do
-#    echo $f
+#	echo " -------------- File: $f"
+	LOCATION=$(grep Hall $f | sed -e 's,Hall,,g' -e 's,:,,g' | sed 's,^[ ]*,,g')
+	DATE=$(grep Dag $f | sed 's,[a-zA-Z]*[dD]*ag: ,,g' | sed 's,[a-zA-Z]*[dD]*ag ,,g' | sed -e 's,Okt,Oct,g' -e 's,okt,Oct,g' | sed -e 's,[sSlL]ö,,' )
+#	    echo "Getting date... $DATE"
+	DATE=$(echo $DATE | sed -e 's,mars,march 2014,g' -e 's,februari,february 2014,g' -e 's,januari,january 2014,g')
+	GDATE=$(date -d "$DATE" "+%y-%m-%d")
+#	echo "LOCATION: '$LOCATION'  DAG: $GDATE"
+
+	#
+	#  Find out when Nord plays in the file
+	#
+	grep  -i "^[0-9][0-9]:[0-9][0-9]" $f | sed 's,\t,;,g' | while (true)
+	do
+	    read game
+	    if [ "$game" = "" ] ; then break; fi
+#	    echo "game: $game"
+	    
+	    IDX=1
+	    TIME=$(echo $game | awk ' BEGIN { FS=";" }  {print $1}')
+	    TEAM1=$(echo $game | awk ' BEGIN { FS=";" }  {print $3}')
+	    TEAM2=$(echo $game | awk ' BEGIN { FS=";" }  {print $5}')
+	    TEAM3=$(echo $game | awk ' BEGIN { FS=";" }  {print $7}')
+	    TEAM4=$(echo $game | awk ' BEGIN { FS=";" }  {print $9}')
+
+	    GAME1=$(( $(echo $TEAM1 | grep -i nord | wc -l) + $(echo $TEAM2 | grep -i nord | wc -l) ))
+	    GAME2=$(( $(echo $TEAM3 | grep -i nord | wc -l) + $(echo $TEAM4 | grep -i nord | wc -l) ))
+
+	    HOMET=""
+	    AWAYT=""
+	    if [ $GAME1 -ne 0 ] &&  [ $GAME2 -eq 0 ] 
+		then
+#		echo "----------> TEAM FOUND GAME1"
+		HOMET=$TEAM1
+		AWAYT=$TEAM2
+	    elif [ $GAME1 -eq 0 ] &&  [ $GAME2 -ne 0 ] 
+		then
+#		echo "---------> TEAM FOUND GAME2"
+		HOMET=$TEAM3
+		AWAYT=$TEAM4
+#	    else
+#		echo "TEAM DISCARD game"
+	    fi
+		
+	    if [ "$HOMET" != "" ] && [ "$AWAYT" != "" ]
+	    then
+		echo "$GDATE;$TIME;$LOCATION;$HOMET;$AWAYT;" >> ../$GENDER_SHORT.txt
+#	    else
+#		echo "TEAM DISCARD $GAME"
+		
+	    fi
+
+#	    echo "in $(pwd) created  ../$GENDER_SHORT.txt"
+
+
+	done
+    done 
+
+    cd ..
+
+    echo "in $(pwd) : cp $GENDER_SHORT.txt  ../"
+    mkdir -p ../sammandrag
+    cp $GENDER_SHORT.txt  ../sammandrag
+    
+
+} 
+
+
+finddat_old()
+{
+    GENDER=$1
+    GENDER_SHORT="$2"
+
+
+    cd $GENDER 
+    rm ../$GENDER_SHORT.txt
+
+    #
+    #  Find out when Nord plays (what files)
+    #
+    for f in $(grep -l -i nord *.txt)
+    do
+	echo " -------------- File: $f"
+	LOCATION=$(grep Hall $f | sed -e 's,Hall,,g' -e 's,:,,g' | sed 's,^[ ]*,,g')
+	echo "LOCATION: '$LOCATION'"
+
+	#
+	#  Find out when Nord plays in the file
+	#
 	for t in $(grep -l -i nord $f)
 	do
-	    echo "Getting date..."
-	    DATE=$(grep Dag $t | sed 's,[a-zA-Z]*[dD]*ag: ,,g' | sed 's,[a-zA-Z]*[dD]*ag ,,g' | sed 's,Okt,Oct,g' | sed -e 's,[sSlL]ö,,')
+	    echo "t: $t"
+	    break
+	    DATE=$(grep Dag $t | sed 's,[a-zA-Z]*[dD]*ag: ,,g' | sed 's,[a-zA-Z]*[dD]*ag ,,g' | sed -e 's,Okt,Oct,g' -e 's,okt,Oct,g' | sed -e 's,[sSlL]ö,,' )
+	    
+	    echo "Getting date... $DATE"
 	    DATE=$(echo $DATE | sed -e 's,mars,march 2014,g' -e 's,februari,february 2014,g' -e 's,januari,january 2014,g')
 	    GDATE=$(date -d "$DATE" "+%y-%m-%d")
 	    GLOC=$(grep -i hall $f | sed 's,Hall:[ ]*,,g')  
@@ -195,15 +284,15 @@ finddat()
 	    FIRST_TIME=${FIRST_TIME//,/.}
 	    LAST_TIME=${LAST_TIME//,/.}
 
-#	    echo "FIRST_TIME: $FIRST_TIME"
-#	    echo "LAST_TIME: "
+	    echo "FIRST_TIME: $FIRST_TIME"
+	    echo "LAST_TIME:  $LAST_TIME"
 	    if [ "$FIRST_TIME" = "" ]
 		then
 		FIRST_TIME="dag  "
 	    fi
 
 
-	    echo "$(date -d "$DATE" "+%y-%m-%d") $FIRST_TIME    Nord                 - olika-lag                 -     $GLOC                 ($FIRST_TIME-$LAST_TIME) " >> ../$GENDER_SHORT.txt
+	    echo "$(date -d "$DATE" "+%y-%m-%d") $FIRST_TIME $LOCATION   Nord                 - olika-lag                 -     $GLOC                 ($FIRST_TIME-$LAST_TIME) " >> ../$GENDER_SHORT.txt
 #	    echo "in $(pwd) created  ../$GENDER_SHORT.txt"
 
 
@@ -212,24 +301,35 @@ finddat()
 
     cd ..
 
-    cp $GENDER_SHORT.txt  ../
+    echo "in $(pwd) : cp $GENDER_SHORT.txt  ../"
+    mkdir -p ../sammandrag
+    cp $GENDER_SHORT.txt  ../sammandrag
     
 
 } 
 
-cleanup
-getdocs
-finddocs ${FIL_ARKIV_TXT}
 
-gentxt 
-#gentxt flickor
-#gentxt pojkar
-rm all.txt
+
+if [ "$1" = "liverpoo" ]
+then
+    cleanup
+    getdocs
+    finddocs ${FIL_ARKIV_TXT}
+    
+    gentxt 
+    #gentxt flickor
+    #gentxt pojkar
+    rm all.txt
+fi
 
 echo Flickor
-finddat flickor 
+#finddat flickor 
+finddat flickor F05 
+finddat flickor F06
 echo Pojkar
-finddat pojkar 
+#finddat pojkar 
+finddat pojkar P05
+finddat pojkar P06
 
 
 

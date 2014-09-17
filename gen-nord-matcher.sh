@@ -1,6 +1,12 @@
 #!/bin/bash
 
 
+#
+# If you've ever seen a really (I mean really) dirty hack 
+#   - this script will beat it 
+#
+
+
 TEAMS_CONF=$(dirname $0)/teams.conf
 LOGO=$(dirname $0)/ik-nord.png
 if [ -f $TEAMS_CONF ] 
@@ -17,6 +23,7 @@ then
     shift
 fi
 
+BASE_DIR=$(pwd)
 FAKE_DATA_DIR=~/opt/iknord/nord-data-backup
 
 #TEAMS="F01 P04 " 
@@ -52,7 +59,10 @@ SQLITE=sqlite3
 DB_DIR=$(pwd)
 
 db_command() {
-#    echo "db_command:   $*  [${DB_DIR}/IKNORD.sqlite]" ;
+    if [ "$DEBUG" = "true" ]
+    then
+	echo "db_command:   $*  [${DB_DIR}/IKNORD.sqlite]" ;
+    fi
     echo "$*" | $SQLITE ${DB_DIR}/IKNORD.sqlite
 }
 
@@ -64,7 +74,7 @@ clean_db()
     else
 	mkdir -p db-backup
 	mv IKNORD.sqlite db-backup/IKNORD-$(date '+%y-%m-%d').sqlite
-	DB_CREATE="CREATE TABLE matcher (date DATE, time TIME, team varchar(50), home varchar(50), away varchar(50));"
+	DB_CREATE="CREATE TABLE matcher (date DATE, time TIME, location varchar(50), team varchar(50), home varchar(50), away varchar(50), url varchar(200));"
 	
 	db_command "$DB_CREATE"
     fi
@@ -72,7 +82,7 @@ clean_db()
 
 insert_game() 
 {
-    DB_GAME="INSERT INTO matcher VALUES ('$1','$2','$3','$4','$5');"
+    DB_GAME="INSERT INTO matcher VALUES ('$1','$2','$3','$4','$5','$6', '$7' );"
 
     db_command "$DB_GAME"
 }
@@ -95,8 +105,8 @@ init()
     done
 
 
-#    CURRENT_MONTH_UK=$(date "+%B")
-    CURRENT_MONTH_UK="Oktober"
+    CURRENT_MONTH_UK=$(date "+%B")
+    #    CURRENT_MONTH_UK="Oktober"
     CURRENT_MONTH=$CURRENT_MONTH_UK
     case $CURRENT_MONTH_UK in
 	"October")
@@ -127,8 +137,8 @@ set_up()
     for i in $TEAMS
     do
 
-	if [ "$(uname -n)" = "schnittke" ] || [ "$DEBUG" = "true" ]
-	    then
+	if [ "$(uname -n)" = "schnittke2" ] || [ "$DEBUG" = "true" ]
+	then
 	    # local if host 
 	    fetch_file $i
 	else
@@ -142,10 +152,10 @@ set_up()
 	
 	diff $i.txt ../../$i.txt >/dev/null 2>/dev/null
 	RET=$?
-#    if [ $RET -ne 0 ]
-#	then
-#	echo "Lag: $i $(date)" >> ../../nytt-schema.txt
-#    fi
+	#    if [ $RET -ne 0 ]
+	#	then
+	#	echo "Lag: $i $(date)" >> ../../nytt-schema.txt
+	#    fi
 	cp $i.txt ../../
 	
     done
@@ -164,12 +174,12 @@ fetch_file()
 	exit 1
     fi
 
-#    if [ -f ${MATCH_DIR}/$1.txt ]
-#    then
-#	echo "FILE EXISTS :)   ${MATCH_DIR}/$1.txt"
-#    else
-#	echo "NO :()   ${MATCH_DIR}/$1.txt"
-#    fi
+    #    if [ -f ${MATCH_DIR}/$1.txt ]
+    #    then
+    #	echo "FILE EXISTS :)   ${MATCH_DIR}/$1.txt"
+    #    else
+    #	echo "NO :()   ${MATCH_DIR}/$1.txt"
+    #    fi
 
     cp ${MATCH_DIR}/$1.txt .
 
@@ -193,7 +203,8 @@ fetch_url()
 	exit 1
     fi
     
-    
+
+
     echo " -- FETCH \"$URL\"  in $(pwd)"
 
     if [ -f $1.txt ]
@@ -202,16 +213,27 @@ fetch_url()
 	mv $1.txt $1.txt.save
     fi
     
-    curl "$URL" -o $1.txt
+    
+    # SAMMANDRAG 
+    if [ -f $BASE_DIR/$URL ]
+    then
+	echo "FOUND :  $BASE_DIR/$URL  "
+	cp  $BASE_DIR/$URL .
+	URL_BASED=false
+    else
+	# URLs
+	URL_BASED=true
+	curl "$URL" -o $1.txt 2>/dev/null
+    fi
 
     if [ "$?" != "0" ]
     then
 	if [ -f $1.txt.save ]
 	then
-	    echo "Dwnload failed, restoring $i"
+	    echo "Download failed, restoring $i"
 	    mv $1.txt.save $1.txt
 	else
-	    echo "Dwnload failed, creating empty file $i"
+	    echo "Download failed, creating empty file $i"
 	    touch $1.txt
 	fi
 	
@@ -219,12 +241,11 @@ fetch_url()
     then
 	if [ -f $1.txt.save ]
 	then
-	    echo "URL seems wrong ..... bailing out"
+	    echo "URL $1/'$URL' seems wrong ..... bailing out"
 	    echo ".... first restoring $1.txt"
 	    mv $1.txt.save $1.txt
-	    sleep 10
 	else
-	    echo "URL seems wrong ..... bailing out"
+	    echo "URL $1/'$URL' seems wrong ..... bailing out"
 	    echo ".... creating empty $1.txt"
 	    touch $1.txt
 	fi
@@ -260,42 +281,73 @@ get_cafe()
 
 create_cafe() 
 {
-    start_file cafe.tmp "Cafe-arrangemang" "$MYTEAMS" "2014-2015"
-    rm cafe.tmp2
-    for i in $(ls cafe-*.tmp)
-    do
-	cat $i >> cafe.tmp2
-    done 
-    sort -n cafe.tmp2 > cafe.tmp3
+    MD_FILE=$1
 
+#    echo " ------------------------- create_cafe $1"
+    
+    
+    SELECT_STMT="SELECT date, time, team, home, away, url, location FROM matcher WHERE location LIKE '%asthuggsh%' ORDER BY DATE;"
 
-    idx=0
-    while (true) 
+    TMP_FILE=$MD_FILE.tmp
+    rm -f $TMP_FILE
+    DATE=""
+
+    db_command $SELECT_STMT  | while (true)
     do
-	MO="${MONTHS[$idx]}"
-	if [ "$MO" = "" ]; then break ; fi
+	read LINE
+	if [ "$LINE" = "" ] ; then break; fi
+	#	echo "DB CAFE:  $LINE"
 	
-	echo "#$MO" >> cafe.tmp
-	grep -i "${MONTHS_REGEXP[$idx]}" cafe.tmp3| awk '{ print $0 "\n"}'  >> cafe.tmp
-	echo "" >> cafe.tmp
-	idx=$(( $idx + 1 ))
+	#	echo "TEAM: $TEAM"
+
+	LAST_DATE=$DATE
+	DATE=$(echo $LINE | awk ' BEGIN {FS="|"} { print $1 ;}' )
+	TIME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $2 ;}' )
+	TEAM=$(echo $LINE | awk ' BEGIN {FS="|"} { print $3 ;}' )
+	HOME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $4 ;}' )
+	AWAY=$(echo $LINE | awk ' BEGIN {FS="|"} { print $5 ;}' )
+	URL=$(echo $LINE | awk ' BEGIN {FS="|"} { print $6 ;}' )
+	LOCATION=$(echo $LINE | awk ' BEGIN {FS="|"} { print $7 ;}' )
+
+	URL_LINK=""
+	if [ "$URL" != "--" ]
+	then
+	    URL_LINK="(<a href=\"$URL\">more info</a>)"
+	fi
+
+	LOCATION_LINK=""
+	if [ "$LOCATION" != "--" ]
+	then
+	    LOCATION_LINK="($LOCATION)"
+	fi
+
+	if [ "$LAST_DATE" != "$DATE" ]
+	then
+	    echo "#$DATE" >> $TMP_FILE
+	fi
+
+	echo "$DATE $TIME, $TEAM, $HOME - $AWAY $LOCATION_LINK $URL_LINK" >> $TMP_FILE
+	echo "" >> $TMP_FILE
 
     done
 
-    end_file cafe.tmp
+    #    echo "CAFE done..."
 
-    CAFE_MD=cafe.md
-    PDF_FILE=${CAFE_MD%.md}.pdf
-    HTML_FILE=${CAFE_MD%.md}.html
-    iconv -f ISO-8859-15  -t UTF-8 cafe.tmp > $CAFE_MD
+    NEW_PDF_FILE=${MD_FILE%.md}.pdf
+    NEW_HTML_FILE=${MD_FILE%.md}.html
 
-    cleanup_sv $CAFE_MD
-    GENS=""
-    pandoc   $CAFE_MD -o $PDF_FILE
-    if [ $? != 0 ] ; then echo "Failed generating PDF ($PDF_FILE)" ; else GENS="$GENS $PDF_FILE"; fi
-    pandoc   $CAFE_MD -o $HTML_FILE
-    if [ $? != 0 ] ; then echo "Failed generating HTML ($HTML_FILE)" ; else GENS="$GENS $HTML_FILE"; fi
-    cleanup_sv $HTML_FILE
+    
+
+    mv $TMP_FILE $MD_FILE
+    cleanup_sv $MD_FILE
+    
+    pandoc   $MD_FILE -o $NEW_PDF_FILE
+    pandoc   $MD_FILE -o $NEW_HTML_FILE
+
+    cleanup_sv $NEW_HTML_FILE
+    
+    tohtml "<a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
+    
 }
 
 get_games()
@@ -306,142 +358,170 @@ get_games()
 	return
     fi
 
-#    echo "get_games($i)"
-
     TEAM=$1
+    echo "GET GAMES for $TEAM"
 
-    dos2unix $TEAM.txt >/dev/null  2>/dev/null
+    if [ -f $BASE_DIR/$URL ]
+    then
+	URL_BASED=false
+    else
+	URL_BASED=true
+    fi
 
-    html2text -width 200 $TEAM.txt > $TEAM.tmp1
-
-    cat $TEAM.tmp1 | awk 'BEGIN { found=0; }  /^Omgång/ { found=1;} /Nyheter/ { found=0;} { if ( found==1) { print $0} } ' > $TEAM.tmp
-
-    cat $TEAM.tmp | grep -v Omgång | while (true); 
-    do
-	oldline=$line
-	read line
-#	echo "line: $line"
-	if [ "$line" = "" ]; then break ; fi
-
-	if [[ "$line" =~ ^[a-zA-Z].* ]];
-	then
-#	    echo "NEW DATE FOUND..."
-	    # New date
-	    DAY=$(echo ${line:0:2} | sed 's,[ ]*$,,g')
-	    DATE=$(echo ${line:3:5} | sed 's,[ ]*$,,g' | awk ' {print $1}')
-	    TIME=$(echo ${line:8:6} | sed 's,[ ]*$,,g')
-	 #   echo "time1: $DATE   '$line'"
-	    PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
-#	    FIELD=$(echo ${line:73:20} | sed 's,[ \t\r]*$,,g')
-	    NEW_DAY=$(echo $DATE | sed 's,\([0-9]*\)/[0-9]*,\1,g')
-	    NEW_MONTH=$(echo $DATE | sed 's,[0-9]*/\([0-9]*\),\1,g')
-	else
-#	    echo "FOUND, keeping date: $DATE"
-	    TIME=$(echo ${line:0:5} | sed 's,[ ]*$,,g')
-#	    echo "time2: $DATE   '$line'"
-	    PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
-	fi
+    if [  "$URL_BASED" = "true" ] 
+    then
+	#    echo "get_games($i)"
 	
-	HOME1=(${PLAYING_TEAMS//-/ })
-	HOME=$(echo ${HOME1} | sed 's,_, ,g' | sed 's,[ ]*$,,g' )
 	
-	SIZE=${#HOME}
-	SIZE=$(( $SIZE + 2 ))
-#	echo "SIZE: $SIZE"
-	AWAY1=${PLAYING_TEAMS:$SIZE:100}
-	AWAY2=(${AWAY1//-/ })
-	AWAY=$(echo ${AWAY2} | sed 's,_, ,g' | sed 's,[ ]*$,,g')
+	dos2unix $TEAM.txt >/dev/null  2>/dev/null
 	
+	html2text -width 200 $TEAM.txt > $TEAM.tmp1
+	
+	cat $TEAM.tmp1 | awk 'BEGIN { found=0; }  /^Omgång/ { found=1;} /Nyheter/ { found=0;} { if ( found==1) { print $0} } ' > $TEAM.tmp
+	
+	cat $TEAM.tmp | grep -v Omgång | while (true); 
+	do
+	    oldline=$line
+	    read line
+	    #	    echo "line: ($team) => $line"
+	    if [ "$line" = "" ]; then break ; fi
+	    
+	    if [[ "$line" =~ ^[a-zA-Z].* ]];
+	    then
+		#	    echo "NEW DATE FOUND..."
+		# New date
+		DAY=$(echo ${line:0:2} | sed 's,[ ]*$,,g')
+		DATE=$(echo ${line:3:5} | sed 's,[ ]*$,,g' | awk ' {print $1}')
+		TIME=$(echo ${line:8:6} | sed 's,[ ]*$,,g')
+		URL_TMP=$(echo ${line:14:20} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
+		#		echo "URL: $URL_TMP   http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?m=${URL_TMP}&s=2014   <---- $line"
+		#   echo "time1: $DATE   '$line'"
+		PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
+		#	    FIELD=$(echo ${line:73:20} | sed 's,[ \t\r]*$,,g')
+		NEW_DAY=$(echo $DATE | sed 's,\([0-9]*\)/[0-9]*,\1,g')
+		NEW_MONTH=$(echo $DATE | sed 's,[0-9]*/\([0-9]*\),\1,g')
+	    else
+		#	    echo "FOUND, keeping date: $DATE"
+		TIME=$(echo ${line:0:5} | sed 's,[ ]*$,,g')
+		URL_TMP=$(echo ${line:5:20} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
+		#	    echo "time2: $DATE   '$line'"
+		PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
+	    fi
+	    
+	    HOME1=(${PLAYING_TEAMS//-/ })
+	    HOMET=$(echo ${HOME1} | sed 's,_, ,g' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g' )
+	    
+	    SIZE=${#HOMET}
+	    SIZE=$(( $SIZE + 2 ))
+	    #	echo "SIZE: $SIZE"
+	    AWAY1=${PLAYING_TEAMS:$SIZE:100}
+	    AWAY2=(${AWAY1//-/ })
+	    AWAY=$(echo ${AWAY2} | sed 's,_, ,g' | sed -e 's,[ ]*$,,g'  -e 's,^[ ]*,,g')
+	    
+	    
+	    if [ "$NEW_DAY" = "" ]
+	    then
+		echo "DAY ERROR, DATE: $DATE"
+		echo "  line: $line"
+		echo "  line: $oldline"
+	    fi
+	    
+	    if [ "$NEW_MONTH" = "" ]
+	    then
+		echo "MONTH ERROR, DATE: $DATE"
+		echo "  line: $line"
+		echo "  line: $oldline"
+	    fi
+	    
+	    
+	    YEAR=$YEAR1_NR
+	    if [ $NEW_MONTH -lt 09 ]
+	    then
+		YEAR=$YEAR2_NR
+	    fi
+	    
+	    LOCATION="--"
+	    SAVE=false
+	    if [ "$HOMET" = "IK Nord" ] || [ "$HOMET" = "Nord" ] ||  [ "$HOMET" = "nord" ] 
+	    then
+		if [ "$TEAM" != "AH" ]
+		then
+		    LOCATION="Masthuggshallen"
+		fi
+		HOMET="IK Nord"
+		SAVE=true		
+	    fi
 
-	if [ "$NEW_DAY" = "" ]
-	then
-	    echo "DAY ERROR, DATE: $DATE"
-	    echo "  line: $line"
-	    echo "  line: $oldline"
-	fi
+	    if [ "$AWAY" = "IK Nord" ] || [ "$AWAY" = "Nord" ] ||  [ "$AWAY" = "nord" ] ;
+	    then
+		AWAY="IK Nord"
+		SAVE=true		
+	    fi
+	    
+	    if [ "$SAVE" = "true" ]
+	    then
+		if [ "$URL_TMP" != "" ]
+		then
+		    URL="http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?m=${URL_TMP}&s=2014"
+		    #		    echo "URL_CHECK:  $HOMET - $AWAY [$URL]"
+		    curl "$URL" -o game-tmp.html 2>/dev/null
+		    html2text  -o game-tmp.txt game-tmp.html
+		    #		    if [ "$LOCATION" != "--" ]
+		    #		    then
+		    #			echo -n "LOCATION: $LOCATION => "
+		    #		    fi			
+		    LOCATION=$(grep "Arena:" game-tmp.txt | awk ' { print $2}' | sed -e 's,^[ ]*,,g' -e 's,[ ]*$,,g')
+		    #		    echo "LOCATION: $LOCATION"
+		    rm game-tmp.*
+		else
+		    URL="--"
+		fi
+		NEW_DATE=$(date -d "$NEW_MONTH/$NEW_DAY/$YEAR" '+%y-%m-%d' )
+		#		echo insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL"
+		insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL"
+	    else
+		echo "NOT_INSERT:" "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "'$HOMET'"  "'$AWAY'"  >> /tmp/not-insert.log
+	    fi
+	    
+	done
+    else
+	echo "FILE BASED"
+	cat $BASE_DIR/$URL | grep "^[0-9]" | while (true)
+	do
+	    read line
+#	    echo "line: ($team) => $line"
+	    if [ "$line" = "" ]; then break ; fi
 
-	if [ "$NEW_MONTH" = "" ]
-	then
-	    echo "MONTH ERROR, DATE: $DATE"
-	    echo "  line: $line"
-	    echo "  line: $oldline"
-	fi
+	    DATE=$(echo $line | awk ' BEGIN { FS=";" }  {print $1}')
+	    TIME=$(echo $line | awk ' BEGIN { FS=";" }  {print $2}')
+	    PLACE=$(echo $line | awk ' BEGIN { FS=";" }  {print $3}')
+	    HOMET=$(echo $line | awk ' BEGIN { FS=";" }  {print $4}')
+	    AWAYT=$(echo $line | awk ' BEGIN { FS=";" }  {print $5}')
 
+	    if [ "$HOMET" = "IK Nord" ] || [ "$HOMET" = "Nord" ] ||  [ "$HOMET" = "nord" ] 
+	    then
+		HOMET="IK Nord"
+	    fi
 
-	YEAR=$YEAR1_NR
-	if [ $NEW_MONTH -lt 09 ]
-	then
-	    YEAR=$YEAR2_NR
-	fi
+	    if [ "$AWAY" = "IK Nord" ] || [ "$AWAY" = "Nord" ] ||  [ "$AWAY" = "nord" ] ;
+	    then
+		AWAY="IK Nord"
+	    fi
+	    
 
-	NEW_DATE=$(date -d "$NEW_MONTH/$NEW_DAY/$YEAR" '+%y-%m-%d' )
+	    URL="--"
+#	    echo insert_game "$DATE, $TIME, $PLACE, $TEAM, $HOMET,  $AWAYT, $URL"
+	    insert_game "$DATE" "$TIME" "$PLACE" "$TEAM" "$HOMET"  "$AWAYT" "$URL"
+	done
+	echo "FILE BASED DONE"
+	
+    fi
+    
+    
 
-#	echo "DATE: '$DATE' => $NEW_DAY $NEW_MONTH => $NEW_DATE"
-
-#	echo ""
-#	echo "line: $line"
-#	echo "  day:   $DAY"
-#	echo "  date:  $DATE"
-#	echo "  time:  $TIME '$DATE'"
-#	echo "  teams: $PLAYING_TEAMS"
-#	echo "  home:  $HOME"
-#	echo "  away:  $AWAY"
-#	echo "  field: $FIELD"
-#	echo "NEW_DATE: $NEW_DATE  $DATE $line"
-#	echo "$NEW_DATE $TIME $TEAM $HOME - $AWAY ($FIELD)"
-        insert_game "$NEW_DATE"   "$TIME" "$TEAM" "$HOME"  "$AWAY"
-    done
-#   >  $TEAM.tmp2
-
-#exit
-#    echo " ==== get_games $1 ==> $TEAM-tmp2 "
-#    ls -al  $TEAM.tmp
-#    ls -al  $TEAM.tmp2
 
 }
 
-get_games_old()
-{
-
-    echo "get_games($i)"
-
-    TEAM=$1
-
-    dos2unix $TEAM.txt >/dev/null  2>/dev/null
-#    file $TEAM.txt
-#    sleep 20
-    grep -i -e nord -e sammandrag $TEAM.txt | grep "[0-9][0-9]-[0-9][0-9]-[0-9][0-9]" | \
-	sed -e 's,<[a-zA-Z0-9 ]*=[0-9a-zA-Z#]*>[ \t]*[0-9]*[ \t]*[0-9]*,,g' -e "s,</font>,,g" -e "s,^[ \t]*,,g" > $TEAM.tmp
-
-#    echo " ==== get_games $1 "
-
-#    echo "in here..... $(pwd)"
-
-    cat $TEAM.tmp | while (true); 
-    do
-	read line
-	echo "line: $line"
-	if [ "$line" = "" ]; then break ; fi
-	DATE=$(echo ${line:0:9} | sed 's,[ ]*$,,g')
-	TIME=$(echo ${line:11:5} | sed 's,[ ]*$,,g')
-	HOME=$(echo ${line:18:20} | sed 's,[ ]*$,,g')
-	AWAY=$(echo ${line:41:20}| sed 's,[ ]*$,,g')
-	FIELD=$(echo ${line:73:20} | sed 's,[ \t\r]*$,,g')
-
-#	echo "line: $line"
-#	echo "  date:  $DATE"
-#	echo "  time:  $TIME"
-#	echo "  home:  $HOME"
-#	echo "  away:  $AWAY"
-#	echo "  field: $FIELD"
-	echo "$DATE $TIME $TEAM $HOME - $AWAY ($FIELD)"
-    done  >  $TEAM.tmp2
-
-#    echo " ==== get_games $1 ==> $TEAM-tmp2 "
-#    ls -al  $TEAM.tmp
-#    ls -al  $TEAM.tmp2
-
-}
 
 
 month_parser()
@@ -456,8 +536,8 @@ month_parser()
     echo "#$MONTH"  >> $OUT_FILE
     echo "#$MONTH"  >> $MONTH_FILE
 
-#    echo "FIND $REG in $FILE"
-#    grep 04 $FILE
+    #    echo "FIND $REG in $FILE"
+    #    grep 04 $FILE
 
     grep "$MONTH_RE" $FILE | while (true); do
 	read newline
@@ -468,7 +548,7 @@ month_parser()
 	    echo "-----------------------------------------------------"
 	    echo "#LINE1: $newline  \"$REG\"  "
 	    echo "#  re: $REG"
-#	    LINE=$(echo "$newline" | grep "[I]*[K]*[ ]*Nord -" | grep -e asthugg -e alhalla -e iseberg)
+	    #	    LINE=$(echo "$newline" | grep "[I]*[K]*[ ]*Nord -" | grep -e asthugg -e alhalla -e iseberg)
 	    LINE=$(echo "$newline" | grep "[I]*[K]*[ ]*Nord[ \t]*-")
 	    echo "#LINE2: '$LINE'"
 	    echo "-----------------------------------------------------"
@@ -495,12 +575,12 @@ start_file()
     MYTEAMS=$3
     PERIOD=$4
 
-    echo "![](ik-nord.png)   www.iknord.nu" > $TMP_FILE
+    echo "![](ik-nord.png)   <a href=\"www.iknord.nu\">www.iknord.nu</a>" > $TMP_FILE
     echo  >> $TMP_FILE
-#    echo >$TMP_FILE
+    #    echo >$TMP_FILE
     echo "# $TITLE $PERIOD" >> $TMP_FILE
     echo "# Lag: $MYTEAMS" >> $TMP_FILE
-#    echo "#Period: $PERIOD" >> $TMP_FILE
+    #    echo "#Period: $PERIOD" >> $TMP_FILE
     echo "" >> $TMP_FILE
 } 
 
@@ -524,24 +604,24 @@ end_file()
     echo "K&auml;lla : http://www3.proteamonline.se/" >> $TMP_FILE
     echo  >> $TMP_FILE
     echo "Genererades fr&aring;n k&auml;llan ovan:    $(date)" >> $TMP_FILE
-#    echo  >> $TMP_FILE
-#    echo "Giltighet:   nja, ingen alls. Se detta dokument som en fingervisning" >> $TMP_FILE
-#    echo  >> $TMP_FILE
-#    echo "Fr&aring;gor:   helst inte, mvh Henrik Sandklef" >> $TMP_FILE
-#    echo  >> $TMP_FILE
+    #    echo  >> $TMP_FILE
+    #    echo "Giltighet:   nja, ingen alls. Se detta dokument som en fingervisning" >> $TMP_FILE
+    #    echo  >> $TMP_FILE
+    #    echo "Fr&aring;gor:   helst inte, mvh Henrik Sandklef" >> $TMP_FILE
+    #    echo  >> $TMP_FILE
 } 
 
 cleanup_sv()
 {
     FILE_TO_CLEAN=$1
 
-#    echo "  ---> cleaning up $1"
+    #    echo "  ---> cleaning up $1"
 
-#    dos2unix $FILE_TO_CLEAN
+    #    dos2unix $FILE_TO_CLEAN
 
- #   echo "  ---  cleaning up $1"
+    #   echo "  ---  cleaning up $1"
 
-#export LC_COLLATE="sv_SE.UTF-8"
+    #export LC_COLLATE="sv_SE.UTF-8"
     mv  $FILE_TO_CLEAN ${FILE_TO_CLEAN}.tmp
     cat $FILE_TO_CLEAN.tmp | \
 	sed -e "s,ö,\&ouml;,g" \
@@ -553,9 +633,9 @@ cleanup_sv()
 	-e "s,Ã€,\&auml;,g" \
 	| LC_ALL="POSIX" 	 sed  -e  "s/[\d128-\d255]//g" \
 	> ${FILE_TO_CLEAN} 
- #   echo "   --- cleaning up $1"
+    #   echo "   --- cleaning up $1"
 
-  #  echo "  <--- cleaning up $1"
+    #  echo "  <--- cleaning up $1"
 
 
 }
@@ -577,7 +657,7 @@ create_all()
     MONTH_MD_BASE=$4
     MONTH_ARG=$5
 
-#    echo "===>  MONTH_ARG:  $MONTH_ARG"
+    #    echo "===>  MONTH_ARG:  $MONTH_ARG"
 
     if [ "$MONTH_ARG" = "all" ] 
     then
@@ -600,17 +680,17 @@ create_all()
 
     if [ "$MYTEAMS" = "all" ]
     then
-#	echo "GENERATING ALL TEAMS"
+	#	echo "GENERATING ALL TEAMS"
 	SINGLE_TEAM_STRING=""
 	TEAM_TITLE="$TEAMS"
 	SOURCE_LINK="http://www.svenskhandboll.se/Handbollinfo/Tavling"
     else
-#	echo "GENERATING SINGLE TEAM TEAM='$MYTEAMS'"
+	#	echo "GENERATING SINGLE TEAM TEAM='$MYTEAMS'"
 	SINGLE_TEAM_STRING=" AND TEAM='$MYTEAMS' "
 	TEAM_TITLE="$MYTEAMS"
 	SOURCE_LINK=${!MYTEAMS}
     fi
- 
+    
     NEW_PDF_FILE=${MD_FILE%.md}.pdf
     NEW_HTML_FILE=${MD_FILE%.md}.html
 
@@ -618,9 +698,9 @@ create_all()
 
     echo "![](ik-nord.png)   www.iknord.nu" > $TMP_FILE
     echo  >> $TMP_FILE
-#    echo >$TMP_FILE
+    #    echo >$TMP_FILE
 
-    SELECT_STMT_START="SELECT date, time, team, home, away FROM matcher "
+    SELECT_STMT_START="SELECT date, time, team, home, away, url, location FROM matcher "
     SELECT_STMT_END=" ORDER BY DATE "
 
     if [ "$HOME" != "all" ]
@@ -637,28 +717,43 @@ create_all()
     echo "# Lag: $TEAM_TITLE" >> $TMP_FILE
 
 
-	SELECT_STMT="$SELECT_STMT_START WHERE $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
-	
-#    echo "SELECT_STMT: $SELECT_STMT"
+    SELECT_STMT="$SELECT_STMT_START WHERE $TEAM_STRING  $DATE_STRING $SINGLE_TEAM_STRING $SELECT_STMT_END ;"
+    
+    echo "SELECT_STMT: $SELECT_STMT"
     
     db_command $SELECT_STMT  | while (true)
     do
 	read LINE
 	if [ "$LINE" = "" ] ; then break; fi
-#	echo "DB:  $LINE"
+#		echo "DB:  $LINE"
 	
-#	echo "TEAM: $TEAM"
+#		echo "TEAM: $TEAM"
 
 	DATE=$(echo $LINE | awk ' BEGIN {FS="|"} { print $1 ;}' )
 	TIME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $2 ;}' )
 	TEAM=$(echo $LINE | awk ' BEGIN {FS="|"} { print $3 ;}' )
 	HOME=$(echo $LINE | awk ' BEGIN {FS="|"} { print $4 ;}' )
 	AWAY=$(echo $LINE | awk ' BEGIN {FS="|"} { print $5 ;}' )
+	URL=$(echo $LINE | awk ' BEGIN {FS="|"} { print $6 ;}' )
+	LOCATION=$(echo $LINE | awk ' BEGIN {FS="|"} { print $7 ;}' )
+
+	URL_LINK=""
+	if [ "$URL" != "--" ]
+	then
+	    URL_LINK="(<a href=\"$URL\">more info</a>)"
+	fi
+
+	LOCATION_LINK=""
+	if [ "$LOCATION" != "--" ]
+	then
+	    LOCATION_LINK="($LOCATION)"
+	fi
+
 	if [ "$MYTEAMS" = "all" ]
 	then
-	    echo "$DATE $TIME, $TEAM, $HOME - $AWAY" >> $TMP_FILE
+	    echo "$DATE $TIME, $TEAM, $HOME - $AWAY $LOCATION_LINK $URL_LINK" >> $TMP_FILE
 	else
-	    echo "$DATE $TIME, $HOME - $AWAY" >> $TMP_FILE
+	    echo "$DATE $TIME, $HOME - $AWAY $LOCATION_LINK $URL_LINK" >> $TMP_FILE
 	fi
 	echo "" >> $TMP_FILE
     done
@@ -666,15 +761,15 @@ create_all()
     echo "" >> $TMP_FILE
     echo "" >> $TMP_FILE
     echo "" >> $TMP_FILE
- 
+    
 
-    echo "SOURCE_LINK: $SOURCE_LINK"
-   
+#    echo "SOURCE_LINK: $SOURCE_LINK"
+    
     echo "### Om dokumentet" >> $TMP_FILE
     echo  >> $TMP_FILE
-    echo "URL: http://schema.iknord.nu/" >> $TMP_FILE
+    echo "URL: <a href=\"http://schema.iknord.nu/\">http://schema.iknord.nu/</a>" >> $TMP_FILE
     echo  >> $TMP_FILE
-    echo "K&auml;lla : $SOURCE_LINK" >> $TMP_FILE
+    echo "K&auml;lla : <a href=\"$SOURCE_LINK\">$SOURCE_LINK</a>" >> $TMP_FILE
     echo  >> $TMP_FILE
     echo "Genererades fr&aring;n k&auml;llan ovan:    $(date)" >> $TMP_FILE
     
@@ -688,13 +783,13 @@ create_all()
     cleanup_sv $NEW_HTML_FILE
 
 
-#    echo $(pwd)/$MD_FILE
-#    echo $(pwd)/$NEW_PDF_FILE
-#    echo $(pwd)/$NEW_HTML_FILE
+    #    echo $(pwd)/$MD_FILE
+    #    echo $(pwd)/$NEW_PDF_FILE
+    #    echo $(pwd)/$NEW_HTML_FILE
 
     if [ "$SINGLE_TEAM_STRING" = "" ]
     then
-	echo "all teams, $MONTH_ARG, $HOME, ..."
+#	echo "all teams, $MONTH_ARG, $HOME, ..."
 	if [ "$HOME" != "all" ]
 	then
 	    if [ "$MONTH_STRING" = "" ]
@@ -707,13 +802,13 @@ create_all()
 	    tohtml "Alla matcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
 	fi
     else
-	echo "single $SINGLE_TEAM_STRING ($MONTH_STRING) => $MD_FILE => $NEW_HTML_FILE   "
+#	echo "single $SINGLE_TEAM_STRING ($MONTH_STRING) => $MD_FILE => $NEW_HTML_FILE   "
 	if [ "$HOME" != "all" ]
 	then
-	    echo "  all $NEW_HTML_FILE"
+#	    echo "  all $NEW_HTML_FILE"
 	    tohtml "Hemmamatcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
 	else
-	    echo "  home $HTML_FILE"
+#	    echo "  home $HTML_FILE"
 	    tohtml "Samtliga matcher: <a href=\"$NEW_PDF_FILE\">(pdf)</a> <a href=\"$NEW_HTML_FILE\">(html)</a>"
 	fi
     fi
@@ -733,26 +828,26 @@ create_all_old()
     for team in $MYTEAMS
     do
 	echo "ADDING $team.tmp2"
-#	ls -al $team.tmp2
+	#	ls -al $team.tmp2
 	cat $team.tmp2 >> all.tmp 
     done
     mv all.tmp all.tmp.tmp
 
-#    MINIH=../../minihandboll.txt
-#    if [ -f $MINIH ]
-#    then
-#	iconv -f ISO-8859-15  -t UTF-8  $MINIH > minihandboll.tmp
-#	cat  minihandboll.tmp >> all.tmp.tmp 
-#    fi
+    #    MINIH=../../minihandboll.txt
+    #    if [ -f $MINIH ]
+    #    then
+    #	iconv -f ISO-8859-15  -t UTF-8  $MINIH > minihandboll.tmp
+    #	cat  minihandboll.tmp >> all.tmp.tmp 
+    #    fi
     sort all.tmp.tmp > all.tmp
 
-#    echo "=== LOOK  all.tmp"
-#    ls -al all.tmp
-#    grep F04 all.tmp
-#    echo "=== LOOK  all.tmp"
+    #    echo "=== LOOK  all.tmp"
+    #    ls -al all.tmp
+    #    grep F04 all.tmp
+    #    echo "=== LOOK  all.tmp"
 
     NR_OF_TEAMS=$(echo "$MYTEAMS" | sed 's, ,\n,g' |  wc -l)
-#    echo "NR_OF_TEAMS $NR_OF_TEAMS <==  $MYTEAMS"
+    #    echo "NR_OF_TEAMS $NR_OF_TEAMS <==  $MYTEAMS"
 
     if [ "$HOME" != "all" ]
     then
@@ -777,7 +872,7 @@ create_all_old()
 	fi
 
 
-#	echo "calling month_parser $HOME: $MYTEAMS"
+	#	echo "calling month_parser $HOME: $MYTEAMS"
 	month_parser $MO ${MONTHS_REGEXP[$idx]} all.tmp games.tmp $HOME month.tmp
 	idx=$(( $idx + 1 ))
 
@@ -873,9 +968,9 @@ create_all_old()
 
 tohtml()
 {
-#    echo "In $(pwd) adding to: $HTML_PAGE"
+    #    echo "In $(pwd) adding to: $HTML_PAGE"
     echo "$*" >> $HTML_PAGE
-#    exit
+    #    exit
 }
 
 
@@ -933,8 +1028,7 @@ start_html
 
 for i in $TEAMS
 do
-     get_games $i
-#    get_cafe  $i
+    get_games $i
 done
 
 
@@ -942,12 +1036,13 @@ tohtml "<h2>Spelschema f&ouml;r samtliga lag: $TEAMS</h2>"
 create_all ik-nord-alla.md  "all" "all" ik-nord-alla- all
 create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- all
 
+tohtml "<h2>Cafeschema f&ouml;r Masthusshallen</h2>"
+create_cafe ik-nord-cafe.md
 
 tohtml "<h2>Hemmamatcher per m&aringnad:</h2>"
 MONTH_IDX=0
 while [ "${MONTHS_REGEXP[$MONTH_IDX]}" != "" ]
 do
-#    tohtml "<h2>${MONTHS[$MONTH_IDX]}</h2>"
     create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- "$MONTH_IDX"
     MONTH_IDX=$(( $MONTH_IDX + 1))
 done
