@@ -17,11 +17,23 @@ else
     exit 1
 fi
 
-if [ "$1" = "--debug" ]
-then
-    DEBUG=true
+MODE=all
+while [ "$1" != "" ]
+do
+    if [ "$1" = "--debug" ]
+    then
+	DEBUG=true
+    elif [ "$1" = "--generate" ]
+    then
+	MODE=generate
+    elif [ "$1" = "--get-data" ]
+    then
+	MODE=get
+    else
+	MODE=unknown
+    fi
     shift
-fi
+done
 
 BASE_DIR=$(pwd)
 FAKE_DATA_DIR=~/opt/iknord/nord-data-backup
@@ -359,6 +371,7 @@ get_games()
     fi
 
     TEAM=$1
+    URL=${!1}
     echo "GET GAMES for $TEAM"
 
     if [ -f $BASE_DIR/$URL ]
@@ -706,10 +719,10 @@ create_all()
     if [ "$HOME" != "all" ]
     then
 	TITLE="Hemmamatcher"	
-	TEAM_STRING=" HOME LIKE '%I%K%Nord%' "
+	TEAM_STRING=" HOME LIKE '%I%K%Nord%' AND ( LOCATION LIKE '%alhalla%' OR LOCATION LIKE '%asthuggsh%' ) "
     else
 	TITLE="Matcher"
-	TEAM_STRING=" ( HOME LIKE '%I%K%Nord%'  OR AWAY LIKE '%I%K%Nord%' ) "
+	TEAM_STRING=" ( HOME LIKE '%I%K%Nord%'  OR AWAY LIKE '%I%K%Nord%' )  "
     fi
 
 
@@ -1014,53 +1027,85 @@ add_all()
 ########
 
 
+get_data() 
+{
+    SAVE_DIR=$(pwd)
 
-init
-clean_db
-clean_up
-mkdir -p   ${MYTMPDIR}
-fix_logo
-cd         ${MYTMPDIR}
-set_up
+    init
+    clean_db
+    clean_up
+    mkdir -p   ${MYTMPDIR}
+    fix_logo
+    cd         ${MYTMPDIR}
+    set_up
 
-start_html
+    for i in $TEAMS
+    do
+	get_games $i
+    done
 
-
-for i in $TEAMS
-do
-    get_games $i
-done
-
-
-tohtml "<h2>Spelschema f&ouml;r samtliga lag: $TEAMS</h2>"
-create_all ik-nord-alla.md  "all" "all" ik-nord-alla- all
-create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- all
-
-tohtml "<h2>Cafeschema f&ouml;r Masthusshallen</h2>"
-create_cafe ik-nord-cafe.md
-
-tohtml "<h2>Hemmamatcher per m&aringnad:</h2>"
-MONTH_IDX=0
-while [ "${MONTHS_REGEXP[$MONTH_IDX]}" != "" ]
-do
-    create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- "$MONTH_IDX"
-    MONTH_IDX=$(( $MONTH_IDX + 1))
-done
+    cd $SAVE_DIR
+}
 
 
-tohtml "<h2>Individuella spelschema f&ouml;r lagen: $TEAMS</h2>"
-for i in $TEAMS
-do
-    tohtml "<h2>$i</h2>"
-    create_all ik-nord-$i.md $i "all" ik-nord-$i-alla all
-    tohtml "<br>"
-    create_all ik-nord-$i.md $i "home" ik-nord-$i-hemma all
-done
-
-cp *.pdf ../../
-cp *.html ../../
+generate() 
+{
+    SAVE_DIR=$(pwd)
+    cd         ${MYTMPDIR}
 
 
-add_all
+    start_html
+    
+    
+    
+    tohtml "<h2>Spelschema f&ouml;r samtliga lag: $TEAMS</h2>"
+    create_all ik-nord-alla.md  "all" "all" ik-nord-alla- all
+    create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- all
+    
+    tohtml "<h2>Cafeschema f&ouml;r Masthuggshallen</h2>"
+    create_cafe ik-nord-cafe.md
+    
+    tohtml "<h2>Hemmamatcher per m&aringnad:</h2>"
+    MONTH_IDX=0
+    while [ "${MONTHS_REGEXP[$MONTH_IDX]}" != "" ]
+    do
+	create_all ik-nord-hemma.md "all" "home" ik-nord-hemma- "$MONTH_IDX"
+	MONTH_IDX=$(( $MONTH_IDX + 1))
+    done
+    
+    
+    tohtml "<h2>Individuella spelschema f&ouml;r lagen: $TEAMS</h2>"
+    for i in $TEAMS
+    do
+	tohtml "<h2>$i</h2>"
+	create_all ik-nord-$i.md $i "all" ik-nord-$i-alla all
+	tohtml "<br>"
+	create_all ik-nord-$i.md $i "home" ik-nord-$i-hemma all
+    done
+    
+    cp *.pdf ../../
+    cp *.html ../../
+    
+    
+    add_all
+    
+    stop_html
+    cd $SAVE_DIR
+}
 
-stop_html
+
+
+if [ "$MODE" = "all" ]
+then
+    echo "DO ALL"
+    get_data
+    generate
+elif  [ "$MODE" = "get" ] 
+then
+    echo "GET DATA"
+    get_data
+else
+    echo "GENERATE"
+    generate
+fi
+
