@@ -657,6 +657,7 @@ generate()
     do
 	echo "TEAM: $i"
 	generate_single $i > $i.ics
+	unix2dos $i.ics
 	find_clubs $i
 	for club in $CLUB_STR 
 	do
@@ -668,6 +669,7 @@ generate()
 
 	    FILE_NAME=$(echo "$i-$CLUB.ics" | sed 's,[ \t],-,g')
             generate_single $i "$CLUB" > $FILE_NAME
+	    unix2dos $FILE_NAME
 	done
     done
 }
