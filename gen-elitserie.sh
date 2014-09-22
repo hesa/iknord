@@ -10,7 +10,7 @@ Damer="http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?t=14002
 Herrar="http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?t=1400101&s=2014"
 TEAMS=" Damer Herrar"
 
-LOCAL=true
+LOCAL=false
 
 TEAMS_CONF=$(dirname $0)/teams.conf
 
@@ -36,7 +36,9 @@ do
     elif [ "$1" = "--check-db" ]
     then
 	MODE="check"
-	shift
+    elif [ "$1" = "--local" ]
+    then
+	LOCAL=true
     else
 	MODE=unknown
     fi
@@ -169,7 +171,8 @@ insert_game()
 	    echo "update"
 ####	    db_command "SELECT updatedate, updatetime, home, away  FROM matcher WHERE matchid='$MATCH_ID';"
 #	    echo "NOW: '$UTC_DATE_NOW', '$UTC_TIME_NOW"
-	    sleep 5
+
+#	    sleep 5
 
 	    UPDATE_GAME="UPDATE matcher SET date='$NEW_DATE', time='$NEW_TIME', updatedate='$UTC_DATE_NOW', updatetime='$UTC_TIME_NOW' , result='$NEW_RESULT' WHERE matchid='$MATCH_ID' ;"
 
@@ -253,11 +256,13 @@ set_up()
     for i in $TEAMS
     do
 
-	if [ "$(uname -n)" = "schnittke" ] || [ "$DEBUG" = "true" ] || [ "$LOCAL" = "true" ]
+	if [ "$(uname -n)" = "schnittke2" ] || [ "$DEBUG" = "true" ] || [ "$LOCAL" = "true" ]
 	then
 	    # local if host 
+#	    echo LOCAL
 	    cp  ../../elitserie-backup/$i.txt .
 	else
+#	    echo URL
 	    fetch_url $i
 	fi
 
@@ -383,6 +388,7 @@ get_games()
 		URL_TMP=$(echo ${line:16:12} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 		#	    echo "time2: $DATE   '$line'"
 		PLAYING_TEAMS=$(echo ${line:$COL_START:$COL_STOP} | sed 's,[ ]*$,,g')
+		RESULT=$(echo ${line:$COL} |  sed 's,\[pdf\],,g' | sed 's,[ ]*$,,g'  )
 	    fi
 	    
 	    HOMET=$(echo "$PLAYING_TEAMS" |  cut -d'-' -f 1 | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
