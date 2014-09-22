@@ -594,7 +594,7 @@ generate_single()
 	echo "LAST-MODIFIED:${UTC_DATE_NOW}T${UTC_TIME_NOW}Z"
 #	echo "ORGANIZER;CN=SEH, www.svenskhandboll.se"
 	echo "SUMMARY;ENCODING=QUOTED-PRINTABLE: $HOME - $AWAY ($TEAM)"
-	echo "Elitserien $TEAM: $HOME - $AWAY, $LOCATION / $URL_LINK"
+	echo "DESCRIPTION;ENCODING=QUOTED-PRINTABLE:Elitserien $TEAM: $HOME - $AWAY, $LOCATION / $URL_LINK"
 	echo "END:VEVENT"
 
     done
