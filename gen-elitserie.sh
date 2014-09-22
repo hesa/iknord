@@ -355,10 +355,10 @@ get_games()
 #		echo "NEW DATE FOUND...:  $line"
 		# New date
 		DAY=$(echo ${line:0:2} | sed 's,[ ]*$,,g')
-		DATETIME=$(echo ${line:3:10} | sed 's,[ ]*$,,g' | awk ' {print $1}')
+		DATETIME=$(echo ${line:3:10} | sed 's,[ ]*$,,g' | awk ' {printf "%s %s\n",  $1 , $2 }')
 		DATE=$(echo "$DATETIME" |  cut -d' ' -f 1 )
 		TIME=$(echo "$DATETIME" |  cut -d' ' -f 2 )
-
+#		echo "DATE: '$DATE' , '$TIME' <--- '$DATETIME' <-------------------- '$line'"
 		URL_TMP=$(echo ${line:16:12} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 		#		echo "URL: $URL_TMP   http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?m=${URL_TMP}&s=2014   <---- $line"
 		#   echo "time1: $DATE   '$line'"
@@ -367,7 +367,7 @@ get_games()
 		NEW_DAY=$(echo $DATE | sed 's,\([0-9]*\)/[0-9]*,\1,g')
 		NEW_MONTH=$(echo $DATE | sed 's,[0-9]*/\([0-9]*\),\1,g')
 	    else
-		echo "FOUND, keeping date: $DATE"
+#		echo "FOUND, keeping date: $DATE"
 		TIME=$(echo ${line:0:5} | sed 's,[ ]*$,,g')
 		URL_TMP=$(echo ${line:16:12} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 		#	    echo "time2: $DATE   '$line'"
@@ -377,7 +377,7 @@ get_games()
 	    HOMET=$(echo "$PLAYING_TEAMS" |  cut -d'-' -f 1 | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 	    AWAY=$(echo "$PLAYING_TEAMS" |  cut -d'-' -f 2 | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g' -e 's,[\t][ ]*[0-9][0-9 ]*,,g')
 
-	    echo "SPLIT: '$DAY'  '$DATE'  '$TIME' id:'$URL_TMP'  teams:'$PLAYING_TEAMS' => '$HOMET' '$AWAY' "
+#	    echo "SPLIT: '$DAY'  '$DATE'  '$TIME' id:'$URL_TMP'  teams:'$PLAYING_TEAMS' => '$HOMET' '$AWAY' "
 
 	    
 #	    SIZE=${#HOMET}
@@ -437,6 +437,7 @@ get_games()
 		else
 		    URL="--"
 		fi
+
 		NEW_DATE=$(date -d "$NEW_MONTH/$NEW_DAY/$YEAR" '+%y-%m-%d' )
 #		echo insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL_TMP" "$URL"
 #		echo "DEBUG '$DATE' '$HOMET' '$AWAY' " 
@@ -549,14 +550,14 @@ generate_single()
 	URL=$(echo $LINE | awk ' BEGIN {FS="|"} { print $7 ;}' )
 	LOCATION=$(echo $LINE | awk ' BEGIN {FS="|"} { print $8 ;}' )
 
+#echo "DATE:  $DATE $TIME  <----- $LINE"
 
-	
 	UTC_DATE_START=$(date -u --date "CEST $DATE $TIME"  '+%Y%m%d' )
 	UTC_TIME_START=$(date -u --date "CEST $DATE $TIME" '+%H%M%S' )
 
-	secs=$(date +%s -u --date="CEST $DATE $TIME")
-	UTC_DATE_STOP=$(date -u  --date="@$((secs + 3600))" '+%Y%m%d')
-	UTC_TIME_STOP=$(date -u  --date="@$((secs + 3600))" '+%H%M%S')
+	secs=$(date '+%s' -u --date="CEST $DATE $TIME")
+	UTC_DATE_STOP=$(date -u  --date="@$((secs + 7200))" '+%Y%m%d')
+	UTC_TIME_STOP=$(date -u  --date="@$((secs + 7200))" '+%H%M%S')
 
 
 	#
@@ -614,6 +615,7 @@ find_clubs()
 
 check_db()
 {
+    RET=0
     for i in $TEAMS
     do
 	echo "TEAM: $i"
@@ -624,16 +626,28 @@ check_db()
 	    # DEBUG
 	    SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE team='$TEAM' AND (home='$CLUB' OR away='$CLUB') ORDER BY DATE;"
 	    COUNT=$(db_command $SELECT_STMT)
-            echo "    CLUB: $CLUB ($COUNT)"
-	    if [ "$i" = "Herrar" ] && [ $COUNT -ne 32 ]
+	    ICS_COUNT=$(grep "$CLUB" "$i.ics"  | grep SUMMARY | wc -l)
+            echo "    CLUB: $CLUB ($COUNT/$ICS_COUNT)"
+
+	    if [ "$i" = "Herrar" ] 
 		then
-		echo "ERROR: wrong number of matches ($COUNT) for $i"
-	    elif [ "$i" = "Damer" ] && [ $COUNT -ne 22 ]
+		if [ $COUNT -ne 32 ] || [ $ICS_COUNT -ne 32 ] 
+		    then
+		    echo "ERROR: wrong number of matches ($COUNT) for $i"
+		    RET=1
+		fi
+	    elif [ "$i" = "Damer" ] 
 	    then
-		echo "ERROR: wrong number of matches ($COUNT) for $i"
+		if [ $COUNT -ne 22 ] || [ $ICS_COUNT -ne 22 ] 
+		    then
+		    echo "ERROR: wrong number of matches ($COUNT) for $i"
+		    RET=1
+		fi
 	    fi
+
 	done
     done
+    exit $RET
 }
 
 generate() 
