@@ -29,6 +29,14 @@ do
     elif [ "$1" = "--clean-db" ]
     then
 	MODE=clean
+    elif [ "$1" = "--teams" ]
+    then
+	TEAMS="$2"
+	shift
+    elif [ "$1" = "--check-db" ]
+    then
+	MODE="check"
+	shift
     else
 	MODE=unknown
     fi
@@ -51,7 +59,7 @@ LONG_YEAR2_NR=2015
 
 BACKUP_DIR=$(pwd)/results/$(date +%Y-%m-%d)
 
-MYTMPDIR=tmp/eiltserien
+MYTMPDIR=tmp/elitserien
 HTML_PAGE=$(pwd)/index.html
 
 
@@ -74,7 +82,7 @@ clean_db()
     else
 	mkdir -p db-backup
 	mv ELITSERIEN.sqlite db-backup/ELITSERIEN-$(date '+%y-%m-%d').sqlite
-	DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, location varchar(50) NOT NULL, team varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), PRIMARY KEY (matchid));"
+	DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, updatedate DATE NOT NULL, updatetime TIME NOT NULL, location varchar(50) NOT NULL, team varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), PRIMARY KEY (matchid));"
 	
 	db_command "$DB_CREATE"
     fi
@@ -84,6 +92,8 @@ insert_game()
 {
     MATCH_ID="$7"
 
+    printf "Match id: %10s" $MATCH_ID
+   
  #   echo "MATCH_ID=$MATCH_ID"
     
     NEW_DATE="$1"
@@ -92,19 +102,23 @@ insert_game()
     NEW_TEAM="$4"
     NEW_HOME="$5"
     NEW_AWAY="$6"
+
+    UTC_DATE_NOW=$(TZ=UTC date  '+%Y-%m-%d')
+    UTC_TIME_NOW=$(TZ=UTC date  '+%H:%M:%S')
     
 
     SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE matchid='$MATCH_ID';"
+
     COUNT=$(db_command $SELECT_STMT)
-    
+    echo "------------ $5 $6 : COUNT: $COUNT"
 
     if [ $COUNT -gt 1 ] 
     then
-	echo "Shoit..... $SELECT_STMT returned $COUNT occ"
+	echo "Shit..... $SELECT_STMT returned $COUNT occ"
+	sleep 2
 	exit 0
     elif [ $COUNT -ne 0 ] 
     then
-#	echo "GET DATE etc"
 	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location FROM matcher WHERE matchid='$MATCH_ID' ;"
 	
 	LINE=$(db_command $SELECT_STMT)
@@ -143,29 +157,44 @@ insert_game()
 	
 	if [ "$NEW_DATE" != "$DATE" ] || [ "$NEW_TIME" != "$TIME" ] || [ "$NEW_LOCATION" != "$LOCATION" ] || [ "$NEW_HOME" != "$HOME" ] || [ "$NEW_AWAY" != "$AWAY" ] 
 	then
-	    echo "DIFF"
-	    echo "--------------------------"
-	    echo "'$NEW_DATE' '$NEW_TIME' '$NEW_LOCATION' '$NEW_HOME' '$NEW_AWAY'"  
-	    echo "'$DATE' '$TIME' '$LOCATION' '$HOME' '$AWAY'" 
-	    echo update
+#	    echo "DIFF"
+#	    echo "--------------------------"
+#	    echo "'$NEW_DATE' '$NEW_TIME' '$NEW_LOCATION' '$NEW_HOME' '$NEW_AWAY'"  
+#	    echo "'$DATE' '$TIME' '$LOCATION' '$HOME' '$AWAY'" 
+#	    echo "update"
+####	    db_command "SELECT updatedate, updatetime, home, away  FROM matcher WHERE matchid='$MATCH_ID';"
+#	    echo "NOW: '$UTC_DATE_NOW', '$UTC_TIME_NOW"
 
+	    UPDATE_GAME="UPDATE matcher SET date='$NEW_DATE', time='$NEW_TIME', updatedate='$UTC_DATE_NOW', updatetime='$UTC_TIME_NOW' WHERE matchid='$MATCH_ID';"
 
-	    NEW_GAME="UPDATE matcher SET date='$NEW_DATE', time='$NEW_TIME' WHERE matchid='$MATCH_ID';"
-	    echo "NEW_GAME: $NEW_GAME"
-	    sleep 1
+	    db_command "$UPDATE_GAME"	
+
+#	    db_command "SELECT updatedate, updatetime, home, away  FROM matcher WHERE matchid='$MATCH_ID';"
+
 #	    exit
 
-	    db_command "$NEW_GAME"	
-#	else
-#	    echo "NO DIFF..."
+	else
+#	echo "=============================================================== $5 vs. $6 NO DIFF"
+	    echo "NO DIFF... $AWAY $HOME"
 	fi
 
     else
-	echo insert
+#	echo "=============================================================== $5 vs. $6 AS Roma"
 
-	DB_GAME="INSERT INTO matcher VALUES ('$1','$2','$3','$4','$5','$6', '$7', '$8' );"
+	DB_GAME="INSERT INTO matcher VALUES ('$1','$2', '$UTC_DATE_NOW', '$UTC_TIME_NOW', '$3','$4','$5','$6', '$7', '$8' );"
+	echo "$DB_GAME"
 	db_command "$DB_GAME"
     fi
+
+#	echo "=============================================================== $5 vs. $6 LIVERPOOOLLLL"
+
+    TMP=0
+    while [ $TMP -lt 20 ]
+    do
+	printf "\b"
+	TMP=$(( $TMP + 1 ))
+    done
+
 }
 
 
@@ -299,48 +328,69 @@ get_games()
 	
 	dos2unix $TEAM.txt >/dev/null  2>/dev/null
 	
-	html2text -width 200 $TEAM.txt > $TEAM.tmp1
+	cp $TEAM.txt $TEAM.html
+	w3m -dump -cols 500  $TEAM.html > $TEAM.tmp1
+#html2text -width 200 $TEAM.txt > $TEAM.tmp1
 	
 	cat $TEAM.tmp1 | awk 'BEGIN { found=0; }  /^Omgång/ { found=1;} /Nyheter/ { found=0;} { if ( found==1) { print $0} } ' > $TEAM.tmp
 	
+	COL=$(cat $TEAM.tmp1 | grep "Tid"  | grep Matchnummer | grep Match | grep Resultat | grep -b -o Resultat | awk ' BEGIN{FS=":"}{ print $1}')
+	COL_START=29
+	COL_STOP=$(($COL - $COL_START))
+
+#	echo "COL: $COL  $COL_START  $COL_STOP"
+#	exit
+
 	cat $TEAM.tmp | grep -v Omgång | while (true)
 	do
 	    oldline=$line
 	    read line
 	    #	    echo "line: ($team) => $line"
 	    if [ "$line" = "" ]; then break ; fi
-	    
+#	    echo
+#	    echo
+#	    echo "LINE: $line"
 	    if [[ "$line" =~ ^[a-zA-Z].* ]];
 	    then
-		#	    echo "NEW DATE FOUND..."
+#		echo "NEW DATE FOUND...:  $line"
 		# New date
 		DAY=$(echo ${line:0:2} | sed 's,[ ]*$,,g')
-		DATE=$(echo ${line:3:5} | sed 's,[ ]*$,,g' | awk ' {print $1}')
-		TIME=$(echo ${line:8:6} | sed 's,[ ]*$,,g')
-		URL_TMP=$(echo ${line:14:20} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
+		DATETIME=$(echo ${line:3:10} | sed 's,[ ]*$,,g' | awk ' {print $1}')
+		DATE=$(echo "$DATETIME" |  cut -d' ' -f 1 )
+		TIME=$(echo "$DATETIME" |  cut -d' ' -f 2 )
+
+		URL_TMP=$(echo ${line:16:12} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 		#		echo "URL: $URL_TMP   http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?m=${URL_TMP}&s=2014   <---- $line"
 		#   echo "time1: $DATE   '$line'"
-		PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
+		PLAYING_TEAMS=$(echo ${line:$COL_START:$COL_STOP} | sed 's,[ ]*$,,g')
 		#	    FIELD=$(echo ${line:73:20} | sed 's,[ \t\r]*$,,g')
 		NEW_DAY=$(echo $DATE | sed 's,\([0-9]*\)/[0-9]*,\1,g')
 		NEW_MONTH=$(echo $DATE | sed 's,[0-9]*/\([0-9]*\),\1,g')
 	    else
-		#	    echo "FOUND, keeping date: $DATE"
+		echo "FOUND, keeping date: $DATE"
 		TIME=$(echo ${line:0:5} | sed 's,[ ]*$,,g')
-		URL_TMP=$(echo ${line:5:20} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
+		URL_TMP=$(echo ${line:16:12} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 		#	    echo "time2: $DATE   '$line'"
-		PLAYING_TEAMS=$(echo ${line:26:100} | sed 's,[ ]*$,,g')
+		PLAYING_TEAMS=$(echo ${line:$COL_START:$COL_STOP} | sed 's,[ ]*$,,g')
 	    fi
 	    
-	    HOME1=(${PLAYING_TEAMS//-/ })
-	    HOMET=$(echo ${HOME1} | sed 's,_, ,g' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g' )
+	    HOMET=$(echo "$PLAYING_TEAMS" |  cut -d'-' -f 1 | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
+	    AWAY=$(echo "$PLAYING_TEAMS" |  cut -d'-' -f 2 | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g' -e 's,[\t][ ]*[0-9][0-9 ]*,,g')
+
+	    echo "SPLIT: '$DAY'  '$DATE'  '$TIME' id:'$URL_TMP'  teams:'$PLAYING_TEAMS' => '$HOMET' '$AWAY' "
+
 	    
-	    SIZE=${#HOMET}
-	    SIZE=$(( $SIZE + 2 ))
+#	    SIZE=${#HOMET}
+#	    SIZE=$(( $SIZE + 2 ))
 	    #	echo "SIZE: $SIZE"
-	    AWAY1=${PLAYING_TEAMS:$SIZE:100}
-	    AWAY2=(${AWAY1//-/ })
-	    AWAY=$(echo ${AWAY2} | sed 's,_, ,g' | sed -e 's,[ ]*$,,g'  -e 's,^[ ]*,,g')
+ #           echo "DEBUG0: '$PLAYING_TEAMS'   $SIZE"
+  #          AWAY1=${PLAYING_TEAMS:$SIZE:100}
+   #         echo "DEBUG1: '$AWAY1'"
+    #        AWAY2=(${AWAY1//-/ })
+     #       echo "DEBUG2: '$AWAY2'"
+      #      AWAY=$(echo ${AWAY2} | sed 's,_, ,g' | sed -e 's,[ ]*$,,g'  -e 's,^[ ]*,,g')
+       #     echo "DEBUG3: '$AWAY'"
+	#    echo "                          '$AWAY'"
 	    
 	    
 	    if [ "$NEW_DAY" = "" ]
@@ -389,9 +439,13 @@ get_games()
 		fi
 		NEW_DATE=$(date -d "$NEW_MONTH/$NEW_DAY/$YEAR" '+%y-%m-%d' )
 #		echo insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL_TMP" "$URL"
+#		echo "DEBUG '$DATE' '$HOMET' '$AWAY' " 
+#		echo insert_game "'$NEW_DATE'   '$TIME' '$LOCATION' '$TEAM' '$HOMET'  '$AWAY' '$URL_TMP' 'URL'"
+#		echo insert_game "'$URL_TMP'    '$NEW_DATE'   '$TIME' '$LOCATION' '$TEAM' '$HOMET'  '$AWAY' "
 		insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL_TMP" "$URL"
 	    else
-		echo "NOT_INSERT:" "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "'$HOMET'"  "'$AWAY'"  >> /tmp/not-insert.log
+		echo "NOT_INSERT:" "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "'$HOMET'"  "'$AWAY'" 
+# >> /tmp/not-insert.log
 	    fi
 	    
 	done
@@ -534,7 +588,7 @@ generate_single()
 	echo "BEGIN:VEVENT"
 	echo "DTSTART:${UTC_DATE_START}T${UTC_TIME_START}Z"
 	echo "DTEND:${UTC_DATE_STOP}T${UTC_TIME_STOP}Z"
-	echo "UID:Eiltserie-$MATCHID@sandklef.com"
+	echo "UID:Elitserie-$MATCHID@sandklef.com"
 	echo "DTSTAMP:${UTC_DATE_NOW}T${UTC_TIME_NOW}Z"
 	echo "LAST-MODIFIED:${UTC_DATE_NOW}T${UTC_TIME_NOW}Z"
 #	echo "ORGANIZER;CN=SEH, www.svenskhandboll.se"
@@ -555,6 +609,31 @@ find_clubs()
     TEAM=$1
     SELECT_STMT="SELECT DISTINCT home FROM matcher where team='$TEAM' ;" 
     CLUB_STR=$(db_command $SELECT_STMT | sed 's,[ \t],##,g')
+#    echo "CS: $CLUB_STR -<<   $SELECT_STMT"
+}
+
+check_db()
+{
+    for i in $TEAMS
+    do
+	echo "TEAM: $i"
+	find_clubs $i
+	for club in $CLUB_STR 
+	do
+	    CLUB=$(echo $club | sed 's,##, ,g')
+	    # DEBUG
+	    SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE team='$TEAM' AND (home='$CLUB' OR away='$CLUB') ORDER BY DATE;"
+	    COUNT=$(db_command $SELECT_STMT)
+            echo "    CLUB: $CLUB ($COUNT)"
+	    if [ "$i" = "Herrar" ] && [ $COUNT -ne 32 ]
+		then
+		echo "ERROR: wrong number of matches ($COUNT) for $i"
+	    elif [ "$i" = "Damer" ] && [ $COUNT -ne 22 ]
+	    then
+		echo "ERROR: wrong number of matches ($COUNT) for $i"
+	    fi
+	done
+    done
 }
 
 generate() 
@@ -564,19 +643,20 @@ generate()
     do
 	echo "TEAM: $i"
 	generate_single $i > $i.ics
-	find_clubs $TEAM
+	find_clubs $i
 	for club in $CLUB_STR 
 	do
 	    CLUB=$(echo $club | sed 's,##, ,g')
 	    # DEBUG
 	    SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE team='$TEAM' AND (home='$CLUB' OR away='$CLUB') ORDER BY DATE;"
 	    COUNT=$(db_command $SELECT_STMT)
-	    echo "    CLUB: $CLUB ($COUNT)"
-	    generate_single $i "$CLUB" > "$i-$CLUB.ics"
+            echo "    CLUB: $CLUB ($COUNT)"
+
+	    FILE_NAME=$(echo "$i-$CLUB.ics" | sed 's,[ \t],-,g')
+            generate_single $i "$CLUB" > $FILE_NAME
 	done
     done
 }
-
 
 if [ "$MODE" = "all" ]
 then
@@ -591,8 +671,13 @@ elif  [ "$MODE" = "clean" ]
 then
 #    echo "GET DATA"
     clean_db
+elif  [ "$MODE" = "check" ] 
+then
+#    echo "GET DATA"
+    check_db
 else
 #    echo "GENERATE"
     generate
 fi
+
 
