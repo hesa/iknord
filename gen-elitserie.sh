@@ -10,7 +10,7 @@ Damer="http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?t=14002
 Herrar="http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?t=1400101&s=2014"
 TEAMS=" Damer Herrar"
 
-LOCAL=false
+LOCAL=true
 
 TEAMS_CONF=$(dirname $0)/teams.conf
 
@@ -82,7 +82,7 @@ clean_db()
     else
 	mkdir -p db-backup
 	mv ELITSERIEN.sqlite db-backup/ELITSERIEN-$(date '+%y-%m-%d').sqlite
-	DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, updatedate DATE NOT NULL, updatetime TIME NOT NULL, location varchar(50) NOT NULL, team varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), PRIMARY KEY (matchid));"
+	DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, updatedate DATE NOT NULL, updatetime TIME NOT NULL, location varchar(50) NOT NULL, team varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), result varchar(200), PRIMARY KEY (matchid));"
 	
 	db_command "$DB_CREATE"
     fi
@@ -102,6 +102,9 @@ insert_game()
     NEW_TEAM="$4"
     NEW_HOME="$5"
     NEW_AWAY="$6"
+    NEW_ID="$7"
+    NEW_URL="$8"
+    NEW_RESULT="$9"
 
     UTC_DATE_NOW=$(TZ=UTC date  '+%Y-%m-%d')
     UTC_TIME_NOW=$(TZ=UTC date  '+%H:%M:%S')
@@ -119,7 +122,7 @@ insert_game()
 	exit 0
     elif [ $COUNT -ne 0 ] 
     then
-	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location FROM matcher WHERE matchid='$MATCH_ID' ;"
+	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location, result FROM matcher WHERE matchid='$MATCH_ID' ;"
 	
 	LINE=$(db_command $SELECT_STMT)
 
@@ -136,6 +139,7 @@ insert_game()
 	MATCHID=$(echo $LINE | awk ' BEGIN {FS="|"} { print $6 ;}' )
 	URL=$(echo $LINE | awk ' BEGIN {FS="|"} { print $7 ;}' )
 	LOCATION=$(echo $LINE | awk ' BEGIN {FS="|"} { print $8 ;}' )
+	RESULT=$(echo $LINE | awk ' BEGIN {FS="|"} { print $9 ;}' )
 	
 	
 #	echo "------------------- DATE:$DATE / $TIME"
@@ -155,17 +159,19 @@ insert_game()
 #	echo "<------------"
 	
 	
-	if [ "$NEW_DATE" != "$DATE" ] || [ "$NEW_TIME" != "$TIME" ] || [ "$NEW_LOCATION" != "$LOCATION" ] || [ "$NEW_HOME" != "$HOME" ] || [ "$NEW_AWAY" != "$AWAY" ] 
+	if [ "$NEW_DATE" != "$DATE" ] || [ "$NEW_TIME" != "$TIME" ] || [ "$NEW_LOCATION" != "$LOCATION" ] || [ "$NEW_HOME" != "$HOME" ] || [ "$NEW_AWAY" != "$AWAY" ]  || [ "$NEW_RESULT" != "$RESULT" ] 
 	then
-#	    echo "DIFF"
-#	    echo "--------------------------"
-#	    echo "'$NEW_DATE' '$NEW_TIME' '$NEW_LOCATION' '$NEW_HOME' '$NEW_AWAY'"  
-#	    echo "'$DATE' '$TIME' '$LOCATION' '$HOME' '$AWAY'" 
-#	    echo "update"
+	    echo "DIFF"
+	    echo "RESULT: '$RESULT'   '$NEW_RESULT'"
+	    echo "--------------------------"
+	    echo "'$NEW_DATE' '$NEW_TIME' '$NEW_LOCATION' '$NEW_HOME' '$NEW_AWAY'"  
+	    echo "'$DATE' '$TIME' '$LOCATION' '$HOME' '$AWAY'" 
+	    echo "update"
 ####	    db_command "SELECT updatedate, updatetime, home, away  FROM matcher WHERE matchid='$MATCH_ID';"
 #	    echo "NOW: '$UTC_DATE_NOW', '$UTC_TIME_NOW"
+	    sleep 5
 
-	    UPDATE_GAME="UPDATE matcher SET date='$NEW_DATE', time='$NEW_TIME', updatedate='$UTC_DATE_NOW', updatetime='$UTC_TIME_NOW' WHERE matchid='$MATCH_ID';"
+	    UPDATE_GAME="UPDATE matcher SET date='$NEW_DATE', time='$NEW_TIME', updatedate='$UTC_DATE_NOW', updatetime='$UTC_TIME_NOW' , result='$NEW_RESULT' WHERE matchid='$MATCH_ID' ;"
 
 	    db_command "$UPDATE_GAME"	
 
@@ -181,7 +187,7 @@ insert_game()
     else
 #	echo "=============================================================== $5 vs. $6 AS Roma"
 
-	DB_GAME="INSERT INTO matcher VALUES ('$1','$2', '$UTC_DATE_NOW', '$UTC_TIME_NOW', '$3','$4','$5','$6', '$7', '$8' );"
+	DB_GAME="INSERT INTO matcher VALUES ('$1','$2', '$UTC_DATE_NOW', '$UTC_TIME_NOW', '$3','$4','$5','$6', '$7', '$8' , '$9' );"
 	echo "$DB_GAME"
 	db_command "$DB_GAME"
     fi
@@ -340,11 +346,12 @@ get_games()
 
 #	echo "COL: $COL  $COL_START  $COL_STOP"
 #	exit
-
+	
 	cat $TEAM.tmp | grep -v Omgång | while (true)
 	do
 	    oldline=$line
 	    read line
+	    RESULT=""
 	    #	    echo "line: ($team) => $line"
 	    if [ "$line" = "" ]; then break ; fi
 #	    echo
@@ -359,6 +366,10 @@ get_games()
 		DATE=$(echo "$DATETIME" |  cut -d' ' -f 1 )
 		TIME=$(echo "$DATETIME" |  cut -d' ' -f 2 )
 #		echo "DATE: '$DATE' , '$TIME' <--- '$DATETIME' <-------------------- '$line'"
+		RESULT=$(echo ${line:$COL} |  sed 's,\[pdf\],,g' | sed 's,[ ]*$,,g'  )
+		
+#		echo "RESULT: $RESULT"
+#		echo
 		URL_TMP=$(echo ${line:16:12} | awk '{ print $1}' | sed -e 's,[ ]*$,,g' -e 's,^[ ]*,,g')
 		#		echo "URL: $URL_TMP   http://www.svenskhandboll.se/Handbollinfo/Tavling/SerierResultat/?m=${URL_TMP}&s=2014   <---- $line"
 		#   echo "time1: $DATE   '$line'"
@@ -443,7 +454,7 @@ get_games()
 #		echo "DEBUG '$DATE' '$HOMET' '$AWAY' " 
 #		echo insert_game "'$NEW_DATE'   '$TIME' '$LOCATION' '$TEAM' '$HOMET'  '$AWAY' '$URL_TMP' 'URL'"
 #		echo insert_game "'$URL_TMP'    '$NEW_DATE'   '$TIME' '$LOCATION' '$TEAM' '$HOMET'  '$AWAY' "
-		insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL_TMP" "$URL"
+		insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "$HOMET"  "$AWAY" "$URL_TMP" "$URL" "$RESULT"
 	    else
 		echo "NOT_INSERT:" "$NEW_DATE"   "$TIME" "$LOCATION" "$TEAM" "'$HOMET'"  "'$AWAY'" 
 # >> /tmp/not-insert.log
@@ -530,9 +541,9 @@ generate_single()
 
     if [ "$SINGLE_TEAM" = "" ]
     then
-	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location FROM matcher WHERE team='$TEAM' ORDER BY DATE;"
+	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location, result FROM matcher WHERE team='$TEAM' ORDER BY DATE;"
     else
-	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location FROM matcher WHERE team='$TEAM' AND (home='$SINGLE_TEAM' OR away='$SINGLE_TEAM' ) ORDER BY DATE;"
+	SELECT_STMT="SELECT date, time, team, home, away, matchid, url, location, result FROM matcher WHERE team='$TEAM' AND (home='$SINGLE_TEAM' OR away='$SINGLE_TEAM' ) ORDER BY DATE;"
     fi
 
 
@@ -549,9 +560,9 @@ generate_single()
 	MATCHID=$(echo $LINE | awk ' BEGIN {FS="|"} { print $6 ;}' )
 	URL=$(echo $LINE | awk ' BEGIN {FS="|"} { print $7 ;}' )
 	LOCATION=$(echo $LINE | awk ' BEGIN {FS="|"} { print $8 ;}' )
+	RESULT=$(echo $LINE | awk ' BEGIN {FS="|"} { print $9 ;}' )
 
 #echo "DATE:  $DATE $TIME  <----- $LINE"
-
 	UTC_DATE_START=$(date -u --date "CEST $DATE $TIME"  '+%Y%m%d' )
 	UTC_TIME_START=$(date -u --date "CEST $DATE $TIME" '+%H%M%S' )
 
@@ -593,7 +604,14 @@ generate_single()
 	echo "DTSTAMP:${UTC_DATE_NOW}T${UTC_TIME_NOW}Z"
 	echo "LAST-MODIFIED:${UTC_DATE_NOW}T${UTC_TIME_NOW}Z"
 #	echo "ORGANIZER;CN=SEH, www.svenskhandboll.se"
-	echo "SUMMARY;ENCODING=QUOTED-PRINTABLE: $HOME - $AWAY ($TEAM)"
+	if [ "$RESULT" = "" ] || [ "$RESULT" = " " ] 
+	then
+	    RES_STRING=""
+	else
+	    RES_STRING="($RESULT)"
+	fi
+#echo "RESULT: '$RESULT'   => $RES_STRING"
+	echo "SUMMARY;ENCODING=QUOTED-PRINTABLE: $HOME - $AWAY $RES_STRING ($TEAM)"
 	echo "DESCRIPTION;ENCODING=QUOTED-PRINTABLE:Elitserien $TEAM: $HOME - $AWAY, $LOCATION / $URL_LINK"
 	echo "END:VEVENT"
 
