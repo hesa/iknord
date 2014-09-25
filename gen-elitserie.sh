@@ -63,6 +63,7 @@ declare -a MONTHS
 declare -a MONTHS_NR
 declare -a MONTHS_REGEXP
 
+SILENT=false
 
 YEAR1_NR=14
 YEAR2_NR=15
@@ -72,7 +73,7 @@ LONG_YEAR2_NR=2015
 BACKUP_DIR=$(pwd)/results/$(date +%Y-%m-%d)
 
 MYTMPDIR=tmp/elitserien
-LOG_DIR=${MYTMPDIR}
+LOG_DIR=/tmp/handboll
 LOG_FILE=${LOG_DIR}/handboll-ics.log
 HTML_PAGE=$(pwd)/index.html
 
@@ -90,12 +91,17 @@ DB=${DB_DIR}/${DB_FILE}
 
 log()
 {
+    if [ "$SILENT" = "true" ]
+    then
+	return
+    fi
+
     if [ ! -d ${LOG_DIR} ]
 	then
 	mkdir -p  ${LOG_DIR}
     fi
 
-    echo "$*" >> $LOG_FILE
+    echo "[$(basename $0)  $(date '+%y-%m-%d %H:%M:%S') ] $*" >> $LOG_FILE
 }
 
 db_command() {
@@ -125,8 +131,10 @@ insert_game()
 {
     MATCH_ID="$7"
 
-    printf "Match id: %10s" $MATCH_ID
-    
+    if [ "$DEBUG" = "true" ]
+    then
+	printf "Match id: %10s" $MATCH_ID
+    fi
     #   echo "MATCH_ID=$MATCH_ID"
     
     NEW_DATE="$1"
@@ -194,14 +202,14 @@ insert_game()
 	
 	if [ "$NEW_DATE" != "$DATE" ] || [ "$NEW_TIME" != "$TIME" ] || [ "$NEW_LOCATION" != "$LOCATION" ] || [ "$NEW_HOME" != "$HOME" ] || [ "$NEW_AWAY" != "$AWAY" ]  || [ "$NEW_RESULT" != "$RESULT" ] 
 	then
-	    	    echo "DIFF"
-	    	    echo "RESULT: '$RESULT'   '$NEW_RESULT'"
-	    	    echo "--------------------------"
-	    	    echo "'$NEW_DATE' '$NEW_TIME' '$NEW_LOCATION' '$NEW_HOME' '$NEW_AWAY'"  
-	    	    echo "'$DATE' '$TIME' '$LOCATION' '$HOME' '$AWAY'" 
-	    	    echo "update"
+	    log "DIFF"
+	    log "RESULT: '$RESULT'   '$NEW_RESULT'"
+	    log "--------------------------"
+	    log "'$NEW_DATE' '$NEW_TIME' '$NEW_LOCATION' '$NEW_HOME' '$NEW_AWAY'"  
+	    log "'$DATE' '$TIME' '$LOCATION' '$HOME' '$AWAY'" 
+	    log "update"
 	    ####	    db_command "SELECT updatedate, updatetime, home, away  FROM matcher WHERE matchid='$MATCH_ID';"
-	    	    echo "NOW: '$UTC_DATE_NOW', '$UTC_TIME_NOW"
+	    log "NOW: '$UTC_DATE_NOW', '$UTC_TIME_NOW"
 
 	    #	    sleep 5
 
@@ -223,18 +231,21 @@ insert_game()
 	#	echo "=============================================================== $5 vs. $6 AS Roma"
 
 	DB_GAME="INSERT INTO matcher VALUES ('$1','$2', '$UTC_DATE_NOW', '$UTC_TIME_NOW', '$3','$4','$5','$6', '$7', '$8' , '$9' );"
-	echo "$DB_GAME"
+	log "$DB_GAME"
 	db_command "$DB_GAME"
     fi
 
     #	echo "=============================================================== $5 vs. $6 LIVERPOOOLLLL"
 
-    TMP=0
-    while [ $TMP -lt 20 ]
-    do
-	printf "\b"
-	TMP=$(( $TMP + 1 ))
-    done
+    if [ "$DEBUG" = "true" ]
+    then
+	TMP=0
+	while [ $TMP -lt 20 ]
+	do
+	    printf "\b"
+	    TMP=$(( $TMP + 1 ))
+	done
+    fi
 
 }
 
@@ -333,7 +344,7 @@ fetch_url()
 
     if [ -f $1.txt ]
     then
-	echo "Backup $i"
+	log "Backup $i"
 	mv $1.txt $1.txt.save
     fi
     
@@ -356,7 +367,7 @@ get_games()
 
     SERIE=$1
     URL=${!1}
-    echo "GET GAMES for $SERIE"
+    log "GET GAMES for $SERIE"
 
     if [ -f $BASE_DIR/$URL ]
     then
@@ -443,16 +454,16 @@ get_games()
 	    
 	    if [ "$NEW_DAY" = "" ]
 	    then
-		echo "DAY ERROR, DATE: $DATE"
-		echo "  line: $line"
-		echo "  line: $oldline"
+		log "DAY ERROR, DATE: $DATE"
+		log "  line: $line"
+		log "  line: $oldline"
 	    fi
 	    
 	    if [ "$NEW_MONTH" = "" ]
 	    then
-		echo "MONTH ERROR, DATE: $DATE"
-		echo "  line: $line"
-		echo "  line: $oldline"
+		log "MONTH ERROR, DATE: $DATE"
+		log "  line: $line"
+		log "  line: $oldline"
 	    fi
 	    
 	    
@@ -487,10 +498,10 @@ get_games()
 		fi
 
 		NEW_DATE=$(date -d "$NEW_MONTH/$NEW_DAY/$YEAR" '+%y-%m-%d' )
-#echo		insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$SERIE" "$HOMET"  "$AWAY" "$URL_TMP" "$URL" "$RESULT"
+		log	"insert_game '$NEW_DATE'   '$TIME' '$LOCATION' '$SERIE' '$HOMET'  '$AWAY' '$URL_TMP' '$URL' '$RESULT'"
 		insert_game "$NEW_DATE"   "$TIME" "$LOCATION" "$SERIE" "$HOMET"  "$AWAY" "$URL_TMP" "$URL" "$RESULT"
 	    else
-		echo "NOT_INSERT:" "$NEW_DATE"   "$TIME" "$LOCATION" "$SERIE" "'$HOMET'"  "'$AWAY'" 
+		log "NOT_INSERT:" "$NEW_DATE"   "$TIME" "$LOCATION" "$SERIE" "'$HOMET'"  "'$AWAY'" 
 		# >> /tmp/not-insert.log
 	    fi
 	    
@@ -678,7 +689,7 @@ check_db()
     RET=0
     for i in $SERIES
     do
-	echo "SERIE: $i"
+	log "SERIE: $i"
 	find_clubs $i
 	for club in $CLUB_STR 
 	do
@@ -687,34 +698,34 @@ check_db()
 	    SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE serie='$SERIE' AND (home='$CLUB' OR away='$CLUB') ORDER BY DATE;"
 	    COUNT=$(db_command $SELECT_STMT)
 	    ICS_COUNT=$(grep "$CLUB" "$i.ics"  | grep SUMMARY | wc -l)
-            echo "    CLUB: $CLUB ($COUNT/$ICS_COUNT)"
+            log "    CLUB: $CLUB ($COUNT/$ICS_COUNT)"
 
 	    if [ "$i" = "Elitserien_Herrar" ] 
 	    then
 		if [ $COUNT -ne 32 ] || [ $ICS_COUNT -ne 32 ] 
 		then
-		    echo "ERROR: wrong number of matches ($COUNT) for $i"
+		    log "ERROR: wrong number of matches ($COUNT) for $i"
 		    RET=1
 		fi
 	    elif [ "$i" = "Elitserien_Damer" ] 
 	    then
 		if [ $COUNT -ne 22 ] || [ $ICS_COUNT -ne 22 ] 
 		then
-		    echo "ERROR: wrong number of matches ($COUNT) for $i"
+		    log "ERROR: wrong number of matches ($COUNT) for $i"
 		    RET=1
 		fi
 	    elif [ "$i" = "Damallsvenskan" ] 
 	    then
 		if [ $COUNT -ne 20 ] || [ $ICS_COUNT -ne 20 ] 
 		then
-		    echo "ERROR: wrong number of matches ($COUNT) for $i"
+		    log "ERROR: wrong number of matches ($COUNT) for $i"
 		    RET=1
 		fi
 	    elif [ "$i" = "Herrallsvenskan" ] 
 	    then
 		if [ $COUNT -ne 26 ] || [ $ICS_COUNT -ne 26 ] 
 		then
-		    echo "ERROR: wrong number of matches ($COUNT) for $i"
+		    log "ERROR: wrong number of matches ($COUNT) for $i"
 		    RET=1
 		fi
 	    fi
@@ -729,7 +740,7 @@ generate()
 
     for i in $SERIES
     do
-	echo "SERIE: $i"
+	log "SERIE: $i"
 	generate_single $i > $i.ics
 	unix2dos $i.ics 2> /dev/null > /dev/null
 	find_clubs $i
@@ -739,7 +750,7 @@ generate()
 	    # DEBUG
 	    SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE serie='$SERIE' AND (home='$CLUB' OR away='$CLUB') ORDER BY DATE;"
 	    COUNT=$(db_command $SELECT_STMT)
-            echo "    CLUB: $CLUB ($COUNT)"
+            log "    CLUB: $CLUB ($COUNT)"
 
 	    FILE_NAME=$(echo "$i-$CLUB.ics" | sed 's,[ \t],-,g')
             generate_single $i "$CLUB" > $FILE_NAME
@@ -773,7 +784,7 @@ separate_runs()
 	$0 --series $i --generate >> /tmp/elit.txt
 	$0 --series $i --check-db >> /tmp/elit.txt
 	RET=$?
-	echo "Serie $i finished: $RET"
+	log "Serie $i finished: $RET"
 	if [ "$RET" = "0" ]
 	then
 	    cp $i*.ics  $SERIE_INSTALL_DIR/
