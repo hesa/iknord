@@ -657,7 +657,7 @@ generate_single()
 	echo "LAST-MODIFIED:${UPDATE_DATE}T${UPDATE_TIME}Z"
 
 	#	echo "ORGANIZER;CN=SEH, www.svenskhandboll.se"
-	if [ "$RESULT" = "" ] || [ "$RESULT" = " " ] 
+	if [ "$RESULT" = "" ] || [ "$RESULT" = " " ]  || [ "$RESULT" = "-" ] 
 	then
 	    RES_STRING=""
 	else
