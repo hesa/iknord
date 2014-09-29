@@ -111,6 +111,9 @@ log()
     echo "[$(basename $0)  $(date '+%y-%m-%d %H:%M:%S') ] $*" >> $LOG_FILE
 }
 
+
+DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, updatedate DATE NOT NULL, updatetime TIME NOT NULL, location varchar(50) NOT NULL, serie varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), result varchar(200), PRIMARY KEY (matchid));"
+
 db_command() {
 
     echo DB_CMD ""
@@ -118,7 +121,8 @@ db_command() {
     if [ ! -f ${DB} ]
     then
 	log "DB ${DB} not present, creating it"
-	clean_db
+	log "$DB_CREATE | $SQLITE ${DB}"
+	echo "DB_CREATE" | $SQLITE ${DB}
     else
 	log "DB ${DB} present, not creating it"
     fi
@@ -139,8 +143,6 @@ clean_db()
     else
 	mkdir -p db-backup
 	mv $DB_FILE db-backup/$DB_FILE-$(date '+%y-%m-%d')
-	DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, updatedate DATE NOT NULL, updatetime TIME NOT NULL, location varchar(50) NOT NULL, serie varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), result varchar(200), PRIMARY KEY (matchid));"
-	
 	db_command "$DB_CREATE"
     fi
 }
