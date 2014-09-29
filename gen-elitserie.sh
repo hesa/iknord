@@ -112,9 +112,15 @@ log()
 }
 
 db_command() {
+
+    echo DB_CMD ""
+
     if [ ! -f ${DB} ]
     then
 	log "DB ${DB} not present, creating it"
+	clean_db
+    else
+	log "DB ${DB} present, not creating it"
     fi
 
     if [ "$DEBUG" = "true" ]
@@ -808,6 +814,9 @@ separate_runs()
 	fi
     done
 }
+
+
+log "DB_DIR: ${DB}"
 
 if [ "$MODE" = "all" ]
 then
