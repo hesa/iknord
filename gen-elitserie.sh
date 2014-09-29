@@ -542,8 +542,8 @@ get_data()
 
     init
     clean_up
+    mkdir  ${MYTMPDIR}
     cd  ${MYTMPDIR}
-#    cd         ${RUN_DIR}
     set_up
 
     for i in $SERIES
