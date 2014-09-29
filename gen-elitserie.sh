@@ -536,7 +536,8 @@ get_data()
 
     init
     clean_up
-    cd         ${RUN_DIR}
+    cd  ${MYTMPDIR}
+#    cd         ${RUN_DIR}
     set_up
 
     for i in $SERIES
@@ -585,8 +586,7 @@ generate_single()
     SINGLE_TEAM="$2"
 
     SAVE_DIR=$(pwd)
-    cd         ${RUN_DIR}
-#    cd  ${MYTMPDIR}
+    cd  ${MYTMPDIR}
 
 
     echo "BEGIN:VCALENDAR"
