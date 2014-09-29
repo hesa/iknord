@@ -120,9 +120,9 @@ db_command() {
 
     if [ ! -f ${DB} ]
     then
-	log "DB ${DB} not present, creating it"
+	log "DB ${DB} not present, creating it (in $(pwd))"
 	log "$DB_CREATE | $SQLITE ${DB}"
-	echo "DB_CREATE" | $SQLITE ${DB}
+	echo "$DB_CREATE" | $SQLITE ${DB}
     else
 	log "DB ${DB} present, not creating it"
     fi
