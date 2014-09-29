@@ -7,7 +7,7 @@
 #
 
 
-
+RUN_DIR=/var/run/handboll
 LOCAL=false
 
 SERIES_CONF=$(dirname $0)/series.conf
@@ -81,6 +81,13 @@ if [ ! -d ${MYTMPDIR} ]
 then
     mkdir -p ${MYTMPDIR}
 fi
+if [ ! -d ${RUN_DIR} ]
+then
+    mkdir -p ${RUN_DIR}
+fi
+
+
+
 
 SQLITE=sqlite3
 DB_DIR=$(pwd)
@@ -105,6 +112,11 @@ log()
 }
 
 db_command() {
+    if [ ! -f ${DB} ]
+    then
+	log "DB ${DB} not present, creating it"
+    fi
+
     if [ "$DEBUG" = "true" ]
     then
 	echo "db_command:   $*  [${DB}]" ;
@@ -524,8 +536,7 @@ get_data()
 
     init
     clean_up
-    mkdir -p   ${MYTMPDIR}
-    cd         ${MYTMPDIR}
+    cd         ${RUN_DIR}
     set_up
 
     for i in $SERIES
@@ -574,7 +585,8 @@ generate_single()
     SINGLE_TEAM="$2"
 
     SAVE_DIR=$(pwd)
-    cd  ${MYTMPDIR}
+    cd         ${RUN_DIR}
+#    cd  ${MYTMPDIR}
 
 
     echo "BEGIN:VCALENDAR"
