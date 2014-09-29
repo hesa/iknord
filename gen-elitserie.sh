@@ -90,7 +90,7 @@ fi
 
 
 SQLITE=sqlite3
-DB_DIR=$(pwd)
+DB_DIR=${RUN_DIR}
 
 DB_FILE=HANDBOLL-SEH.sqlite
 DB=${DB_DIR}/${DB_FILE}
