@@ -772,6 +772,9 @@ find_clubs()
 
 check_db()
 {
+    SAVE_DIR=$(pwd)
+    cd  ${MYTMPDIR}
+
     RET=0
     for i in $SERIES
     do
@@ -818,6 +821,7 @@ check_db()
 
 	done
     done
+    cd $SAVE_DIR
     exit $RET
 }
 
