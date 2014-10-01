@@ -44,6 +44,9 @@ do
     elif [ "$1" = "--separate" ]
     then
 	MODE="separate"
+    elif [ "$1" = "--debug-db" ]
+    then
+	MODE="DEBUGDB"
     elif [ "$1" = "--local" ]
     then
 	LOCAL=true
@@ -91,6 +94,7 @@ fi
 
 SQLITE=sqlite3
 DB_DIR=${RUN_DIR}
+DB_BACKUP_DIR=${RUN_DIR}/db-backup
 
 DB_FILE=HANDBOLL-SEH.sqlite
 DB=${DB_DIR}/${DB_FILE}
@@ -112,17 +116,30 @@ log()
 }
 
 
+exit_on_error() 
+{
+    if [ "$1" != "0" ]
+    then
+	echo "Found error ($1). $2"
+	exit $1
+    fi
+}
+
 DB_CREATE="CREATE TABLE matcher (date DATE NOT NULL, time TIME NOT NULL, updatedate DATE NOT NULL, updatetime TIME NOT NULL, location varchar(50) NOT NULL, serie varchar(50) NOT NULL, home varchar(50) NOT NULL, away varchar(50) NOT NULL, matchid varchar(100) NOT NULL, url varchar(200), result varchar(200), PRIMARY KEY (matchid));"
+db_create()
+{
+    log "$DB_CREATE | $SQLITE ${DB}"
+    echo "$DB_CREATE" | $SQLITE ${DB}
+}
 
 db_command() {
 
-    echo DB_CMD ""
+#    echo "DB_CMD: $*"
 
     if [ ! -f ${DB} ]
     then
 	log "DB ${DB} not present, creating it (in $(pwd))"
-	log "$DB_CREATE | $SQLITE ${DB}"
-	echo "$DB_CREATE" | $SQLITE ${DB}
+	db_create
     else
 	log "DB ${DB} present, not creating it"
     fi
@@ -133,6 +150,24 @@ db_command() {
     fi
     log "$* | $SQLITE ${DB}"
     echo "$*" | $SQLITE ${DB}
+    RET=$?
+#    echo "DB RET: $RET"
+    return $RET
+}
+
+verify_db()
+{
+    
+    SEL="SELECT COUNT(result) FROM matcher;"
+    COUNT=$(db_command "$SEL")
+    RET=$?
+
+    if [ "$1" = "verbose" ]
+    then
+	echo "Database status: $RET"
+	echo "* Entries: $COUNT"
+    fi
+    return $RET
 }
 
 clean_db() 
@@ -141,9 +176,11 @@ clean_db()
     then
 	echo not cleaning db
     else
-	mkdir -p db-backup
-	mv $DB_FILE db-backup/$DB_FILE-$(date '+%y-%m-%d')
-	db_command "$DB_CREATE"
+	if [ -f $DB ]
+	then
+	    mv $DB ${DB_BACKUP_DIR}/$DB_FILE-$(date '+%y-%m-%d')
+	fi
+	db_create
     fi
 }
 
@@ -170,11 +207,15 @@ insert_game()
     UTC_DATE_NOW=$(TZ=UTC date  '+%Y-%m-%d')
     UTC_TIME_NOW=$(TZ=UTC date  '+%H:%M:%S')
     
+    verify_db
+    if [ "$RET" != "0" ] ; then echo "DB seems faulty ...." ; return $RET ; fi
 
     SELECT_STMT="SELECT COUNT (*) FROM matcher WHERE matchid='$MATCH_ID';"
 
     COUNT=$(db_command $SELECT_STMT)
-    #    echo "------------ $5 $6 : COUNT: $COUNT"
+    RET=$?
+    echo "------------ $MATCH_ID => COUNT: $COUNT   RET=$RET"
+    if [ "$RET" != "0" ] ; then echo "Failed counting ($COUNT) ...." ; return $RET ; fi
 
     if [ $COUNT -gt 1 ] 
     then
@@ -313,23 +354,65 @@ clean_up()
 }
 
 
+fetch_url()
+{
+    URL=${!1}
+
+    echo " -- $1 -- \"$URL\""
+    
+    if [ "$URL" = "" ]
+    then
+	exit 1
+    fi
+    
+
+
+      echo " -- FETCH \"$URL\"  in $(pwd)"
+
+    if [ -f $1.txt ]
+    then
+	log "Backup $i"
+	mv $1.txt $1.txt.save
+    fi
+    
+    
+    URL_BASED=true
+    curl "$URL" -o $1.txt 2>/dev/null
+    RET=$?
+
+    log "curl returned $RET"
+
+    COUNT=$(grep "Omgång" $1.txt | wc -l)
+    if [ $COUNT -eq 0 ]
+    then
+	return 1
+    fi
+
+    return $RET
+}
+
 set_up()
 {
     
     for i in $SERIES
     do
 
+	echo "setup $i"
+
 	if [ "$(uname -n)" = "schnittke2" ] || [ "$DEBUG" = "true" ] || [ "$LOCAL" = "true" ]
 	then
 	    # local if host 
 	    #	    echo LOCAL
 	    cp  ../../elitserie-backup/$i.txt .
+	    RET=$?
 	else
 	    #	    echo URL
 	    fetch_url $i
+	    RET=$?
+	    if [ "$RET" != "0" ] ; then return $RET ; fi
 	fi
 
-	if [ $? -ne 0 ]
+	if [ $RET -ne 0 ]
 	then
 	    exit 0
 	fi
@@ -347,34 +430,6 @@ set_up()
 }
 
 
-fetch_url()
-{
-    URL=${!1}
-
-    #   echo " -- $1 -- \"$URL\""
-    
-    if [ "$URL" = "" ]
-    then
-	exit 1
-    fi
-    
-
-
-    #    echo " -- FETCH \"$URL\"  in $(pwd)"
-
-    if [ -f $1.txt ]
-    then
-	log "Backup $i"
-	mv $1.txt $1.txt.save
-    fi
-    
-    
-    URL_BASED=true
-    curl "$URL" -o $1.txt 2>/dev/null
-
-    
-    return 0
-}
 
 
 get_games()
@@ -401,14 +456,20 @@ get_games()
 	#    echo "get_games($i)"
 	
 	dos2unix $SERIE.txt >/dev/null  2>/dev/null
+	RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
 	
 	cp $SERIE.txt $SERIE.html
+	RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
+
 	w3m -dump -cols 500  $SERIE.html > $SERIE.tmp1
+	RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
 	#html2text -width 200 $SERIE.txt > $SERIE.tmp1
 	
 	cat $SERIE.tmp1 | awk 'BEGIN { found=0; }  /^Omgång/ { found=1;} /Nyheter/ { found=0;} { if ( found==1) { print $0} } ' > $SERIE.tmp
+	RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
 	
 	COL=$(cat $SERIE.tmp1 | grep "Tid"  | grep Matchnummer | grep Match | grep Resultat | grep -b -o Resultat | awk ' BEGIN{FS=":"}{ print $1}')
+	RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
 	COL_START=29
 	COL_STOP=$(($COL - $COL_START))
 
@@ -546,11 +607,16 @@ get_data()
     clean_up
     mkdir  ${MYTMPDIR}
     cd  ${MYTMPDIR}
+    RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
+
     set_up
+    RET=$?; 
+    echo "SETUP:$RET"; if [ "$RET" != "0" ] ; then return $RET ; fi
 
     for i in $SERIES
     do
 	get_games $i
+	RET=$?; if [ "$RET" != "0" ] ; then return $RET ; fi
     done
 
     cd $SAVE_DIR
@@ -818,31 +884,44 @@ separate_runs()
 }
 
 
+mkdir -p ${DB_BACKUP_DIR}
+
 log "DB_DIR: ${DB}"
 
 if [ "$MODE" = "all" ]
 then
     #    echo "DO ALL"
     get_data
+    RET=$?
     generate
+    RET=$?
 elif  [ "$MODE" = "get" ] 
 then
     #    echo "GET DATA"
     get_data
+    RET=$?
 elif  [ "$MODE" = "clean" ] 
 then
     #    echo "GET DATA"
     clean_db
+    RET=$?
 elif  [ "$MODE" = "check" ] 
 then
     #    echo "GET DATA"
     check_db
+    RET=$?
 elif  [ "$MODE" = "separate" ] 
 then
     #    echo "SEPARATE"
     separate_runs
+    RET=$?
+elif  [ "$MODE" = "DEBUGDB" ] 
+then
+    verify_db verbose
+    RET=$?
 else
     #echo "GENERATE"
     generate
 fi
 
+exit $RET
